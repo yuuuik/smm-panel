@@ -118,3 +118,28 @@ def _sync_schema():
             t_columns = {column["name"] for column in inspector.get_columns("tasks")}
             if "user_id" not in t_columns:
                 connection.execute(text("ALTER TABLE tasks ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+
+        # Migrate template_actions.account_id to nullable (allow NULL when account is deleted)
+        if "template_actions" in table_names:
+            ta_info = connection.execute(text("PRAGMA table_info(template_actions)")).fetchall()
+            account_id_col = next((row for row in ta_info if row[1] == "account_id"), None)
+            if account_id_col and account_id_col[3] == 1:  # notnull = 1 means NOT NULL
+                connection.execute(text("PRAGMA foreign_keys = OFF"))
+                connection.execute(text("""
+                    CREATE TABLE template_actions_new (
+                        id INTEGER PRIMARY KEY,
+                        template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+                        action_order INTEGER NOT NULL DEFAULT 1,
+                        account_id INTEGER REFERENCES facebook_accounts(id) ON DELETE SET NULL,
+                        action_type VARCHAR(32) NOT NULL,
+                        reaction_type VARCHAR(32),
+                        text TEXT,
+                        image_path VARCHAR(512),
+                        target_comment VARCHAR(128),
+                        delay FLOAT DEFAULT 20.0
+                    )
+                """))
+                connection.execute(text("INSERT INTO template_actions_new SELECT * FROM template_actions"))
+                connection.execute(text("DROP TABLE template_actions"))
+                connection.execute(text("ALTER TABLE template_actions_new RENAME TO template_actions"))
+                connection.execute(text("PRAGMA foreign_keys = ON"))

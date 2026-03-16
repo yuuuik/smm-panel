@@ -102,7 +102,7 @@ class FacebookAccountResponse(FacebookAccountBase):
 
 # ----- Action Template (universal) -----
 class TemplateActionBase(BaseModel):
-    account_id: int
+    account_id: Optional[int] = None
     action_type: str
     reaction_type: Optional[str] = None
     text: Optional[str] = None
@@ -195,6 +195,28 @@ class LogEntryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Account import/export
+class AccountImportItem(BaseModel):
+    name: str
+    cookies: str
+    user_agent: Optional[str] = None
+
+
+class AccountBulkImportRequest(BaseModel):
+    accounts: List[AccountImportItem]
+    proxy_id: Optional[int] = None
+
+
+class AccountImportCodeRequest(BaseModel):
+    code: str
+    proxy_id: Optional[int] = None
+
+
+class AccountExportCodeResponse(BaseModel):
+    code: str
+    count: int
 
 
 # Check account

@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
-import { getAccounts, createAccount, deleteAccount, checkAccount, getProxies, getOpenBrowsers, openAccountBrowser, closeAccountBrowser, updateAccount } from './api'
-import { Zap, RefreshCw, User, AlertCircle, CheckCircle, Pencil, X, Eye, EyeOff } from 'lucide-react'
+import { getAccounts, createAccount, deleteAccount, checkAccount, getProxies, getOpenBrowsers, openAccountBrowser, closeAccountBrowser, updateAccount, importAccountsBulk, exportAccountsCode, importAccountsFromCode } from './api'
+import { Zap, RefreshCw, User, AlertCircle, CheckCircle, Pencil, X, Eye, EyeOff, Upload, Download, KeyRound } from 'lucide-react'
 import { AuthContext } from './App'
 
 export default function Accounts() {
@@ -20,6 +20,26 @@ export default function Accounts() {
   const [editForm, setEditForm] = useState({ name: '', user_agent: '', proxy_id: '', cookies: '' })
   const [cookiesVisible, setCookiesVisible] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
+
+  // Import from TXT (AdsPower)
+  const [showImport, setShowImport] = useState(false)
+  const [importTxt, setImportTxt] = useState('')
+  const [importProxyId, setImportProxyId] = useState('')
+  const [importParsed, setImportParsed] = useState(null)   // parsed preview
+  const [importLoading, setImportLoading] = useState(false)
+
+  // Export code
+  const [showExport, setShowExport] = useState(false)
+  const [exportCode, setExportCode] = useState('')
+  const [exportCount, setExportCount] = useState(0)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportCopied, setExportCopied] = useState(false)
+
+  // Import from code
+  const [showImportCode, setShowImportCode] = useState(false)
+  const [importCode, setImportCode] = useState('')
+  const [importCodeProxyId, setImportCodeProxyId] = useState('')
+  const [importCodeLoading, setImportCodeLoading] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -90,6 +110,71 @@ export default function Accounts() {
       setSuccess('Все аккаунты проверены')
       load()
     } finally { setRecheckingAll(false) }
+  }
+
+  // ── AdsPower TXT parser ──
+  function parseAdsPowerTxt(text) {
+    const blocks = text.split(/\n\s*\n/).filter(b => b.trim())
+    return blocks.map(block => {
+      const obj = {}
+      for (const line of block.trim().split('\n')) {
+        const idx = line.indexOf('=')
+        if (idx > -1) {
+          obj[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
+        }
+      }
+      return { name: obj.name || obj.id || '', cookies: obj.cookie || '', user_agent: obj.ua || '' }
+    }).filter(a => a.name && a.cookies)
+  }
+
+  const handleImportParse = () => {
+    const parsed = parseAdsPowerTxt(importTxt)
+    setImportParsed(parsed)
+  }
+
+  const handleImportSubmit = async () => {
+    if (!importParsed || importParsed.length === 0) return
+    setImportLoading(true)
+    try {
+      await importAccountsBulk({ accounts: importParsed, proxy_id: importProxyId ? Number(importProxyId) : null })
+      setSuccess(`Импортировано ${importParsed.length} аккаунтов`)
+      setShowImport(false)
+      setImportTxt(''); setImportParsed(null); setImportProxyId('')
+      load()
+    } catch (err) { setError(err.message) }
+    finally { setImportLoading(false) }
+  }
+
+  const handleExportOpen = async () => {
+    setShowExport(true)
+    setExportCode(''); setExportCopied(false)
+    setExportLoading(true)
+    try {
+      const res = await exportAccountsCode()
+      setExportCode(res.code)
+      setExportCount(res.count)
+    } catch (err) { setError(err.message); setShowExport(false) }
+    finally { setExportLoading(false) }
+  }
+
+  const handleExportCopy = () => {
+    navigator.clipboard.writeText(exportCode).then(() => {
+      setExportCopied(true)
+      setTimeout(() => setExportCopied(false), 2000)
+    })
+  }
+
+  const handleImportFromCode = async () => {
+    if (!importCode.trim()) return
+    setImportCodeLoading(true)
+    try {
+      const res = await importAccountsFromCode(importCode.trim(), importCodeProxyId ? Number(importCodeProxyId) : null)
+      setSuccess(`Импортировано ${res.length} аккаунтов`)
+      setShowImportCode(false)
+      setImportCode(''); setImportCodeProxyId('')
+      load()
+    } catch (err) { setError(err.message) }
+    finally { setImportCodeLoading(false) }
   }
 
   const inputCls = 'w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-[#3d4f6a] focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-colors'
@@ -205,7 +290,7 @@ export default function Accounts() {
         >
           {/* Table header */}
           <div className="px-5 py-4 border-b border-[#1c2333] flex items-center gap-3 flex-wrap justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={handleRecheckAll}
@@ -214,6 +299,31 @@ export default function Accounts() {
               >
                 <RefreshCw size={12} className={recheckingAll ? 'animate-spin' : ''} />
                 Проверить все
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowImport(true); setImportParsed(null); setImportTxt('') }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-emerald-400 border border-emerald-500/40 rounded-full hover:bg-emerald-500/10 transition-colors"
+              >
+                <Upload size={12} />
+                Импорт TXT
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowImportCode(true); setImportCode('') }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-violet-400 border border-violet-500/40 rounded-full hover:bg-violet-500/10 transition-colors"
+              >
+                <KeyRound size={12} />
+                По коду
+              </button>
+              <button
+                type="button"
+                onClick={handleExportOpen}
+                disabled={list.length === 0}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-orange-400 border border-orange-500/40 rounded-full hover:bg-orange-500/10 transition-colors disabled:opacity-40"
+              >
+                <Download size={12} />
+                Экспорт кода
               </button>
             </div>
             <span className="text-xs font-mono text-[#4b6080]">
@@ -339,6 +449,183 @@ export default function Accounts() {
           )}
         </div>
       </div>
+
+      {/* ── Import TXT modal ── */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 shadow-2xl" style={{ boxShadow: '0 0 64px rgba(16,185,129,0.1)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Upload size={15} className="text-emerald-400" />
+                <h2 className="text-white font-semibold">Импорт аккаунтов (AdsPower TXT)</h2>
+              </div>
+              <button onClick={() => setShowImport(false)} className="text-[#4b6080] hover:text-white transition-colors"><X size={18} /></button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block text-[10px] font-semibold tracking-widest uppercase text-[#4b6080] mb-1.5">Вставьте содержимое TXT файла</label>
+                <textarea
+                  value={importTxt}
+                  onChange={e => { setImportTxt(e.target.value); setImportParsed(null) }}
+                  className={`${inputCls} font-mono resize-none text-xs`}
+                  rows={8}
+                  placeholder={"acc_id=28858\nid=kxqtsf0\nname=serzh10\ncookie=[{...}]\nua=Mozilla/5.0...\n\nacc_id=...\n..."}
+                  spellCheck={false}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold tracking-widest uppercase text-[#4b6080] mb-1.5">Прокси для всех аккаунтов</label>
+                <select
+                  value={importProxyId}
+                  onChange={e => setImportProxyId(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Без прокси</option>
+                  {proxies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+
+              {importParsed && (
+                <div className="bg-[#080c12] border border-[#1c2333] rounded-xl p-3">
+                  <p className="text-xs text-emerald-400 font-semibold mb-2">Найдено аккаунтов: {importParsed.length}</p>
+                  <div className="max-h-32 overflow-y-auto flex flex-col gap-1">
+                    {importParsed.map((a, i) => (
+                      <div key={i} className="text-xs text-[#6b7f96] flex items-center gap-2">
+                        <span className="w-5 text-right text-[#3d4f6a]">{i + 1}.</span>
+                        <span className="text-white font-medium">{a.name}</span>
+                        {a.user_agent && <span className="text-[#3d4f6a] truncate max-w-[200px]">{a.user_agent.substring(0, 40)}…</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 mt-6">
+              {!importParsed ? (
+                <button
+                  onClick={handleImportParse}
+                  disabled={!importTxt.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full font-bold text-sm uppercase tracking-widest text-black bg-gradient-to-r from-emerald-400 to-teal-500 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] hover:scale-[1.02] transition-all disabled:opacity-40 disabled:transform-none"
+                >
+                  Распознать
+                </button>
+              ) : (
+                <button
+                  onClick={handleImportSubmit}
+                  disabled={importLoading || importParsed.length === 0}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full font-bold text-sm uppercase tracking-widest text-black bg-gradient-to-r from-emerald-400 to-teal-500 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] hover:scale-[1.02] transition-all disabled:opacity-40 disabled:transform-none"
+                >
+                  {importLoading ? 'Импорт...' : `Импортировать ${importParsed.length} аккаунтов`}
+                </button>
+              )}
+              <button
+                onClick={() => setShowImport(false)}
+                className="px-5 py-2.5 rounded-full text-sm font-semibold text-[#4b6080] border border-[#1c2333] hover:text-white hover:border-[#2a3a50] transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Export code modal ── */}
+      {showExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 shadow-2xl" style={{ boxShadow: '0 0 64px rgba(251,146,60,0.1)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Download size={15} className="text-orange-400" />
+                <h2 className="text-white font-semibold">Экспорт аккаунтов — код</h2>
+              </div>
+              <button onClick={() => setShowExport(false)} className="text-[#4b6080] hover:text-white transition-colors"><X size={18} /></button>
+            </div>
+
+            {exportLoading ? (
+              <p className="text-[#4b6080] text-sm py-4 text-center">Генерация кода...</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <p className="text-xs text-[#6b7f96]">Код содержит <span className="text-orange-400 font-bold">{exportCount}</span> аккаунтов (куки + UA). Передайте его другому пользователю для импорта.</p>
+                <div>
+                  <label className="block text-[10px] font-semibold tracking-widest uppercase text-[#4b6080] mb-1.5">Код экспорта</label>
+                  <textarea
+                    readOnly
+                    value={exportCode}
+                    className={`${inputCls} font-mono resize-none text-xs`}
+                    rows={5}
+                    onClick={e => e.target.select()}
+                  />
+                </div>
+                <button
+                  onClick={handleExportCopy}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-bold text-sm uppercase tracking-widest text-black bg-gradient-to-r from-orange-400 to-amber-500 hover:shadow-[0_0_24px_rgba(251,146,60,0.5)] hover:scale-[1.02] transition-all"
+                >
+                  {exportCopied ? '✓ Скопировано!' : 'Копировать код'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Import from code modal ── */}
+      {showImportCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 shadow-2xl" style={{ boxShadow: '0 0 64px rgba(139,92,246,0.1)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <KeyRound size={15} className="text-violet-400" />
+                <h2 className="text-white font-semibold">Импорт по коду</h2>
+              </div>
+              <button onClick={() => setShowImportCode(false)} className="text-[#4b6080] hover:text-white transition-colors"><X size={18} /></button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block text-[10px] font-semibold tracking-widest uppercase text-[#4b6080] mb-1.5">Код экспорта</label>
+                <textarea
+                  value={importCode}
+                  onChange={e => setImportCode(e.target.value)}
+                  className={`${inputCls} font-mono resize-none text-xs`}
+                  rows={5}
+                  placeholder="Вставьте код экспорта..."
+                  spellCheck={false}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold tracking-widest uppercase text-[#4b6080] mb-1.5">Прокси для всех аккаунтов</label>
+                <select
+                  value={importCodeProxyId}
+                  onChange={e => setImportCodeProxyId(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Без прокси</option>
+                  {proxies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={handleImportFromCode}
+                disabled={importCodeLoading || !importCode.trim()}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full font-bold text-sm uppercase tracking-widest text-black bg-gradient-to-r from-violet-400 to-purple-500 hover:shadow-[0_0_24px_rgba(139,92,246,0.5)] hover:scale-[1.02] transition-all disabled:opacity-40 disabled:transform-none"
+              >
+                {importCodeLoading ? 'Импорт...' : 'Импортировать'}
+              </button>
+              <button
+                onClick={() => setShowImportCode(false)}
+                className="px-5 py-2.5 rounded-full text-sm font-semibold text-[#4b6080] border border-[#1c2333] hover:text-white hover:border-[#2a3a50] transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Edit account modal ── */}
       {editingAccount && (

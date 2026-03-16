@@ -1,4 +1,5 @@
 """Facebook accounts API and check account logic."""
+import base64
 import json
 import sys
 import os
@@ -9,8 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import FacebookAccount, Proxy, User
-from .schemas import CheckAccountRequest, FacebookAccountCreate, FacebookAccountResponse, FacebookAccountUpdate
+from .models import FacebookAccount, Proxy, TemplateAccount, TemplateAction, User
+from .schemas import (
+    AccountBulkImportRequest, AccountExportCodeResponse, AccountImportCodeRequest,
+    CheckAccountRequest, FacebookAccountCreate, FacebookAccountResponse, FacebookAccountUpdate,
+)
 from .auth import get_current_user
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,6 +56,74 @@ def create_account(
     return acc
 
 
+@router.post("/import", response_model=List[FacebookAccountResponse])
+def import_accounts(
+    data: AccountBulkImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk import accounts (e.g. from AdsPower TXT)."""
+    created = []
+    for item in data.accounts:
+        acc = FacebookAccount(
+            user_id=current_user.id,
+            name=item.name,
+            cookies=item.cookies,
+            user_agent=item.user_agent,
+            proxy_id=data.proxy_id,
+        )
+        db.add(acc)
+        db.flush()
+        db.refresh(acc)
+        created.append(acc)
+    db.commit()
+    return created
+
+
+@router.get("/export-code", response_model=AccountExportCodeResponse)
+def export_accounts_code(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a shareable base64 code containing all user's accounts."""
+    accounts = db.query(FacebookAccount).filter(FacebookAccount.user_id == current_user.id).all()
+    payload = [
+        {"name": a.name, "cookies": a.cookies, "user_agent": a.user_agent}
+        for a in accounts
+    ]
+    code = base64.b64encode(json.dumps({"accounts": payload}).encode()).decode()
+    return {"code": code, "count": len(payload)}
+
+
+@router.post("/import-code", response_model=List[FacebookAccountResponse])
+def import_from_code(
+    data: AccountImportCodeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import accounts from a shareable export code."""
+    try:
+        decoded = json.loads(base64.b64decode(data.code.strip()).decode())
+        accounts_data = decoded.get("accounts", [])
+    except Exception:
+        raise HTTPException(400, "Неверный код импорта")
+    created = []
+    for item in accounts_data:
+        acc = FacebookAccount(
+            user_id=current_user.id,
+            name=item.get("name", ""),
+            cookies=item.get("cookies", ""),
+            user_agent=item.get("user_agent"),
+            proxy_id=data.proxy_id,
+        )
+        db.add(acc)
+        db.flush()
+        db.refresh(acc)
+        created.append(acc)
+    db.commit()
+    return created
+
+
 @router.patch("/{account_id}", response_model=FacebookAccountResponse)
 def update_account(
     account_id: int,
@@ -91,6 +163,11 @@ def delete_account(
     ).first()
     if not acc:
         raise HTTPException(404, "Account not found")
+    # Remove account from template account lists
+    db.query(TemplateAccount).filter(TemplateAccount.account_id == account_id).delete()
+    # Set account_id to NULL in template actions (preserve actions with "Не выбрано")
+    db.query(TemplateAction).filter(TemplateAction.account_id == account_id).update({"account_id": None})
+    db.flush()
     db.delete(acc)
     db.commit()
     # Also close browser if open

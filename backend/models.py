@@ -93,7 +93,7 @@ class TemplateAction(Base):
     id = Column(Integer, primary_key=True, index=True)
     template_id = Column(Integer, ForeignKey("templates.id", ondelete="CASCADE"), nullable=False)
     action_order = Column(Integer, nullable=False, default=1)
-    account_id = Column(Integer, ForeignKey("facebook_accounts.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("facebook_accounts.id", ondelete="SET NULL"), nullable=True)
     action_type = Column(String(32), nullable=False)
     reaction_type = Column(String(32), nullable=True)
     text = Column(Text, nullable=True)

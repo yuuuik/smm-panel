@@ -107,7 +107,7 @@ export default function Templates() {
     actions: renumberActions(
       (template.actions || []).map((action) => ({
         action_order: action.action_order,
-        account_id: action.account_id,
+        account_id: action.account_id ?? null,
         action_type: action.action_type,
         reaction_type: action.reaction_type || null,
         text: action.text || null,
@@ -134,7 +134,7 @@ export default function Templates() {
 
   const normalizeAction = (action, actionOrder) => ({
     action_order: actionOrder,
-    account_id: Number(action.account_id),
+    account_id: action.account_id ? Number(action.account_id) : null,
     action_type: action.action_type,
     reaction_type: actionNeedsReaction || action.action_type.startsWith('react_') ? action.reaction_type : null,
     text: action.text.trim() || null,
@@ -200,7 +200,7 @@ export default function Templates() {
     setEditingIndex(index)
     setDraftAction({
       action_type: action.action_type,
-      account_id: String(action.account_id),
+      account_id: action.account_id != null ? String(action.account_id) : '',
       text: action.text || '',
       image_path: action.image_path || '',
       image_file: action.image_path ? action.image_path.split('/').pop() || '' : '',
@@ -378,7 +378,9 @@ export default function Templates() {
   }
 
   const renderActionSummary = (action) => {
-    const accountName = accountsById[action.account_id]?.name || `Аккаунт #${action.account_id}`
+    const accountName = action.account_id == null
+      ? 'Не выбрано'
+      : (accountsById[action.account_id]?.name || `Аккаунт #${action.account_id}`)
     let actionType = ''
     switch (action.action_type) {
       case 'react_post':
@@ -656,7 +658,9 @@ export default function Templates() {
               templateForm.actions.map((action, index) => {
                 const seqColors = ['#00d4ff', '#a855f7', '#06b6d4', '#ec4899']
                 const color = seqColors[index % seqColors.length]
-                const accountName = accountsById[action.account_id]?.name || `Аккаунт #${action.account_id}`
+                const accountName = action.account_id == null
+                  ? 'Не выбрано'
+                  : (accountsById[action.account_id]?.name || `Аккаунт #${action.account_id}`)
                 const typeLabel = ACTION_OPTIONS.find((o) => o.value === action.action_type)?.label || action.action_type
                 const detail = [
                   action.reaction_type && `реакция: ${action.reaction_type}`,

@@ -151,6 +151,25 @@ export async function closeAccountBrowser(id) {
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка закрытия'); }
   return r.json();
 }
+export async function importAccountsBulk(data) {
+  const r = await fetch(`${API_BASE}/accounts/import`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data),
+  });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка импорта'); }
+  return r.json();
+}
+export async function exportAccountsCode() {
+  const r = await fetch(`${API_BASE}/accounts/export-code`, { headers: headers() });
+  if (!r.ok) throw new Error('Ошибка экспорта');
+  return r.json();
+}
+export async function importAccountsFromCode(code, proxy_id) {
+  const r = await fetch(`${API_BASE}/accounts/import-code`, {
+    method: 'POST', headers: headers(), body: JSON.stringify({ code, proxy_id: proxy_id || null }),
+  });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка импорта по коду'); }
+  return r.json();
+}
 
 // Proxies
 export async function getProxies() {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Play, Square, RotateCcw, Trash2, Plus, ExternalLink, Copy, Pencil } from 'lucide-react'
 import { getTasks, createTask, updateTask, deleteTask, startTask, stopTask, getTemplates } from './api'
@@ -67,6 +67,8 @@ export default function Actions() {
   const [showCreate, setShowCreate] = useState(false)
   const [editingTask, setEditingTask] = useState(null) // task being edited
   const [activeTab, setActiveTab] = useState('all')
+  const [expandedUrls, setExpandedUrls] = useState({})
+  const toggleUrls = useCallback((id) => setExpandedUrls((prev) => ({ ...prev, [id]: !prev[id] })), [])
   const [form, setForm] = useState({
     template_id: '',
     postUrls: [''],
@@ -232,7 +234,11 @@ export default function Actions() {
           <div className="flex items-center gap-2 mb-5">
             <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
             <h2 className="text-xs font-bold text-cyan-400 tracking-[0.2em] uppercase">
-              {editingTask ? `Редактирование #${String(editingTask.id).padStart(2, '0')}` : 'Инициализация задачи'}
+              {editingTask
+                ? (editingTask.status === 'completed' || editingTask.status === 'stopped')
+                  ? `Просмотр задачи #${String(editingTask.id).padStart(2, '0')}`
+                  : `Редактирование #${String(editingTask.id).padStart(2, '0')}`
+                : 'Инициализация задачи'}
             </h2>
           </div>
           <form onSubmit={handleSubmit}>
@@ -443,6 +449,37 @@ export default function Actions() {
                   )}
                 </div>
 
+                {/* Post URLs */}
+                {t.post_urls && t.post_urls.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => toggleUrls(t.id)}
+                      className="flex items-center gap-1.5 text-[9px] font-bold text-gray-600 hover:text-gray-400 tracking-widest uppercase transition-colors"
+                    >
+                      <span className={`transition-transform ${expandedUrls[t.id] ? 'rotate-90' : ''}`}>▶</span>
+                      {t.post_urls.length} {t.post_urls.length === 1 ? 'пост' : t.post_urls.length < 5 ? 'поста' : 'постов'}
+                    </button>
+                    {expandedUrls[t.id] && (
+                      <div className="mt-1.5 space-y-1">
+                        {t.post_urls.map((url, i) => (
+                          <a
+                            key={i}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-[10px] text-cyan-500/70 hover:text-cyan-400 truncate transition-colors"
+                            title={url}
+                          >
+                            <ExternalLink size={9} className="flex-shrink-0" />
+                            <span className="truncate">{url}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Actions */}
                 <div className="flex items-center justify-between pt-1">
                   <div className="flex items-center gap-1.5">
@@ -455,10 +492,10 @@ export default function Actions() {
                         <Play size={13} />
                       </button>
                     )}
-                    {t.status === 'pending' && (
+                    {t.status !== 'running' && (
                       <button
                         onClick={() => handleEdit(t)}
-                        title="Edit"
+                        title={t.status === 'completed' || t.status === 'stopped' ? 'Просмотр / Редактировать' : 'Редактировать'}
                         className="w-8 h-8 rounded-xl bg-[#151b27] border border-[#1c2333] flex items-center justify-center text-gray-500 hover:text-yellow-400 hover:border-yellow-500/40 transition-all"
                       >
                         <Pencil size={13} />

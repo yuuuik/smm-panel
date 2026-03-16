@@ -24,16 +24,17 @@ def _validate_actions(db: Session, actions, user_id: int) -> None:
     if not actions:
         raise HTTPException(400, "Template must contain at least one action")
 
-    account_ids = {action.account_id for action in actions}
-    existing_ids = {
-        row[0]
-        for row in db.query(FacebookAccount.id)
-        .filter(FacebookAccount.id.in_(account_ids), FacebookAccount.user_id == user_id)
-        .all()
-    }
-    missing_ids = sorted(account_ids - existing_ids)
-    if missing_ids:
-        raise HTTPException(400, f"Accounts not found: {', '.join(str(x) for x in missing_ids)}")
+    account_ids = {action.account_id for action in actions if action.account_id is not None}
+    if account_ids:
+        existing_ids = {
+            row[0]
+            for row in db.query(FacebookAccount.id)
+            .filter(FacebookAccount.id.in_(account_ids), FacebookAccount.user_id == user_id)
+            .all()
+        }
+        missing_ids = sorted(account_ids - existing_ids)
+        if missing_ids:
+            raise HTTPException(400, f"Accounts not found: {', '.join(str(x) for x in missing_ids)}")
 
     for index, action in enumerate(actions, start=1):
         if action.action_type not in ACTION_TYPES:
@@ -61,7 +62,9 @@ def _template_to_response(t: Template) -> TemplateResponse:
         )
         for action in sorted(t.actions, key=lambda item: item.action_order)
     ]
-    account_ids = sorted({action.account_id for action in actions} | {ta.account_id for ta in t.accounts})
+    account_ids = sorted(
+        {a for a in ({action.account_id for action in actions} | {ta.account_id for ta in t.accounts}) if a is not None}
+    )
     return TemplateResponse(
         id=t.id,
         name=t.name,

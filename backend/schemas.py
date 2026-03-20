@@ -62,6 +62,10 @@ class ProxyCreate(ProxyBase):
     pass
 
 
+class ProxyUpdate(BaseModel):
+    rotate_delay: int = 0
+
+
 class ProxyResponse(ProxyBase):
     id: int
     created_at: datetime

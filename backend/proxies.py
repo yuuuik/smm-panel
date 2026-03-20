@@ -13,7 +13,7 @@ from automation.proxy_manager import check_proxy, get_proxy_dict
 
 from .database import get_db
 from .models import Proxy, User
-from .schemas import ProxyCreate, ProxyResponse
+from .schemas import ProxyCreate, ProxyUpdate, ProxyResponse
 from .auth import get_current_user
 
 router = APIRouter(prefix="/proxies", tags=["proxies"])
@@ -44,6 +44,22 @@ def create_proxy(
         rotate_delay=data.rotate_delay,
     )
     db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@router.patch("/{proxy_id}", response_model=ProxyResponse)
+def update_proxy(
+    proxy_id: int,
+    data: ProxyUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    p = db.query(Proxy).filter(Proxy.id == proxy_id, Proxy.user_id == current_user.id).first()
+    if not p:
+        raise HTTPException(404, "Proxy not found")
+    p.rotate_delay = data.rotate_delay
     db.commit()
     db.refresh(p)
     return p

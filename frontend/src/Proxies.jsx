@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Eye, EyeOff, Globe, Activity, Server, RefreshCw, Trash2 } from 'lucide-react'
-import { getProxies, createProxy, deleteProxy, checkProxy } from './api'
+import { Eye, EyeOff, Globe, Activity, Server, RefreshCw, Trash2, Pencil, Check, X } from 'lucide-react'
+import { getProxies, createProxy, deleteProxy, checkProxy, updateProxy } from './api'
 
 const DOT_COLORS = ['#00d4ff', '#a855f7', '#ef4444', '#00d4ff', '#a855f7']
 
@@ -25,6 +25,9 @@ export default function Proxies() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [editingDelay, setEditingDelay] = useState(null) // proxy id
+  const [editDelayValue, setEditDelayValue] = useState(0)
+  const [savingDelay, setSavingDelay] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -61,6 +64,26 @@ export default function Proxies() {
       load()
     } catch (err) {
       setError(err.message)
+    }
+  }
+
+  const handleEditDelay = (p) => {
+    setEditingDelay(p.id)
+    setEditDelayValue(p.rotate_delay)
+  }
+
+  const handleSaveDelay = async (id) => {
+    setSavingDelay(id)
+    setError('')
+    try {
+      await updateProxy(id, { rotate_delay: Number(editDelayValue) || 0 })
+      setSuccess('Задержка обновлена')
+      setEditingDelay(null)
+      load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSavingDelay(null)
     }
   }
 
@@ -255,7 +278,49 @@ export default function Proxies() {
                       <td className="px-6 py-4 text-gray-500 text-xs font-mono truncate max-w-[200px]">
                         {p.rotate_url ? `→ ${p.rotate_url.replace(/^https?:\/\//, '')}` : '—'}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-400">{p.rotate_delay}s</td>
+                      <td className="px-6 py-4 text-sm text-gray-400">
+                        {editingDelay === p.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              autoFocus
+                              value={editDelayValue}
+                              onChange={(e) => setEditDelayValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveDelay(p.id)
+                                if (e.key === 'Escape') setEditingDelay(null)
+                              }}
+                              className="w-16 px-2 py-1 bg-[#080c12] border border-cyan-500/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
+                            />
+                            <span className="text-gray-600 text-xs">сек</span>
+                            <button
+                              onClick={() => handleSaveDelay(p.id)}
+                              disabled={savingDelay === p.id}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-cyan-400 hover:bg-cyan-500/10 disabled:opacity-40 transition-all"
+                            >
+                              <Check size={12} />
+                            </button>
+                            <button
+                              onClick={() => setEditingDelay(null)}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-gray-500 hover:bg-white/5 transition-all"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group">
+                            <span>{p.rotate_delay}s</span>
+                            <button
+                              onClick={() => handleEditDelay(p)}
+                              title="Изменить задержку"
+                              className="w-5 h-5 rounded flex items-center justify-center text-gray-600 hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">
                           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />

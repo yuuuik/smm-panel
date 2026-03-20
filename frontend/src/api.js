@@ -195,6 +195,15 @@ export async function checkProxy(id) {
   const r = await fetch(`${API_BASE}/proxies/${id}/check`, { method: 'POST', headers: headers() });
   return r.json();
 }
+export async function updateProxy(id, data) {
+  const r = await fetch(`${API_BASE}/proxies/${id}`, {
+    method: 'PATCH',
+    headers: headers(),
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка обновления прокси'); }
+  return r.json();
+}
 
 // Templates (universal action templates)
 export async function getTemplates() {

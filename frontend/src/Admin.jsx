@@ -1,397 +1,326 @@
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { 
-  adminGetUsers, adminUpdateUser, adminDeleteUser, adminGetUserTasks, 
+  adminGetUsers, adminUpdateUser, adminDeleteUser, 
   adminGetTaskLogs, adminCreateUser, adminGetSupportTickets, 
   adminGetSupportTicket, adminReplySupportTicket, adminUpdateSupportTicket, 
-  adminDeleteSupportTicket, adminSetUserSubscription, adminGetUserDetail 
+  adminDeleteSupportTicket, adminGetUserDetail 
 } from './api'
 import { 
-  Users, ShieldCheck, Trash2, KeyRound, AlertCircle, CheckCircle, 
-  ShieldOff, ChevronDown, ChevronRight, ListChecks, ScrollText, 
-  XCircle, UserPlus, MailCheck, Mail, MessageCircle, Send, 
-  Lock, Crown, Server, Database, Layers, ExternalLink, User, Globe 
+  ShieldCheck, Trash2, AlertCircle, CheckCircle, 
+  ChevronDown, ChevronRight, ListChecks, ScrollText, 
+  XCircle, UserPlus, Send, Layers, ExternalLink, User, Globe, MessageSquare, Info
 } from 'lucide-react'
 
-// --- Вспомогательные данные ---
+// --- Маппинг типов действий ---
 const ACTION_LABELS = {
   like: 'Лайк',
-  comment: 'Коммент',
+  comment: 'Комментарий',
   repost: 'Репост',
   subscribe: 'Подписка',
   view: 'Просмотр',
   reaction: 'Реакция'
 }
 
+// --- Хелпер статусов ---
 function statusBadge(status) {
   const map = {
-    running:   'bg-[rgba(6,182,212,0.12)] text-cyan-400 border-cyan-500/40',
-    completed: 'bg-[rgba(34,197,94,0.12)] text-green-400 border-green-500/40',
-    failed:    'bg-[rgba(239,68,68,0.12)] text-red-400 border-red-500/40',
-    stopped:   'bg-[rgba(156,163,175,0.12)] text-gray-400 border-gray-500/40',
-    pending:   'bg-[rgba(168,85,247,0.12)] text-purple-400 border-purple-500/40',
-    error:     'bg-[rgba(239,68,68,0.12)] text-red-400 border-red-500/40',
+    running:   'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    completed: 'bg-green-500/10 text-green-400 border-green-500/20',
+    failed:    'bg-red-500/10 text-red-400 border-red-500/20',
+    stopped:   'bg-gray-500/10 text-gray-400 border-gray-500/20',
+    pending:   'bg-purple-500/10 text-purple-400 border-purple-500/20',
   }
-  return `inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${map[status] || map.pending}`
+  return `inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${map[status] || 'bg-gray-500/10 text-gray-400'}`
 }
 
-// --- Компоненты логирования и деталей ---
-
-function TaskLogsPanel({ taskId, onClose }) {
+// --- Панель Логов ---
+function TaskLogsPanel({ taskId }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    adminGetTaskLogs(taskId)
-      .then(setLogs)
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    adminGetTaskLogs(taskId).then(setLogs).catch(() => {}).finally(() => setLoading(false))
   }, [taskId])
 
+  if (loading) return <div className="p-4 text-[10px] text-gray-500 animate-pulse">Загрузка логов...</div>
+
   return (
-    <div className="mt-2 bg-[#080c12] border border-[#1c2333] rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#1c2333]">
-        <span className="text-[10px] font-bold text-[#4b6080] uppercase tracking-widest">Логи задачи #{taskId}</span>
-        <button onClick={onClose} className="text-gray-600 hover:text-red-400 transition-colors"><XCircle size={14} /></button>
+    <div className="mt-2 bg-black/40 border border-white/5 rounded-lg overflow-hidden">
+      <div className="bg-white/5 px-3 py-1.5 text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Сырые логи выполнения</div>
+      <div className="max-h-40 overflow-y-auto p-2 space-y-1 font-mono">
+        {logs.length === 0 ? <p className="text-[10px] text-gray-700">Логов пока нет</p> : logs.map(l => (
+          <div key={l.id} className="text-[10px] flex gap-2">
+            <span className={l.success ? "text-cyan-500" : "text-red-500"}>[{l.success ? 'OK' : 'ERR'}]</span>
+            <span className="text-gray-500">[{l.action}]</span>
+            <span className="text-gray-300">{l.message}</span>
+          </div>
+        ))}
       </div>
-      {loading ? (
-        <p className="px-4 py-3 text-[#4b6080] text-xs">Загрузка...</p>
-      ) : logs.length === 0 ? (
-        <p className="px-4 py-3 text-[#3d4f6a] text-xs">Логов нет</p>
-      ) : (
-        <div className="max-h-64 overflow-y-auto">
-          {logs.map((l) => (
-            <div key={l.id} className={`flex items-start gap-3 px-4 py-2 border-b border-[#1c2333]/40 last:border-0 ${!l.success ? 'bg-[rgba(239,68,68,0.04)]' : ''}`}>
-              <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${l.success ? 'bg-cyan-400' : 'bg-red-400'}`} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">{l.action}</span>
-                  <span className="text-[10px] text-[#4b6080]">{l.account_name}</span>
-                  <span className="text-[9px] text-[#3d4f6a] ml-auto">{l.created_at ? new Date(l.created_at).toLocaleTimeString() : ''}</span>
-                </div>
-                <p className={`text-xs mt-0.5 break-all ${l.success ? 'text-gray-400' : 'text-red-400'}`}>{l.message}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
 
+// --- ГЛАВНАЯ ПАНЕЛЬ ДЕТАЛЕЙ (ТУТ ВСЁ МАКСИМАЛЬНО ДЕТАЛЬНО) ---
 function UserDetailPanel({ userId, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('accounts')
-  const [openLogsFor, setOpenLogsFor] = useState(null)
-  const [expandedTemplate, setExpandedTemplate] = useState(null)
+  const [activeTab, setActiveTab] = useState('accounts')
+  const [expandedId, setExpandedId] = useState(null)
 
   useEffect(() => {
-    if (!userId) return
     setLoading(true)
     adminGetUserDetail(userId)
-      .then(d => { setData(d); setLoading(false) })
-      .catch(e => { setError(e.message || 'Ошибка загрузки'); setLoading(false) })
+      .then(res => {
+        // Проверка на корректность данных
+        if (typeof res === 'string' && res.includes('<!DOCTYPE')) {
+          throw new Error("Ошибка API: Сервер вернул HTML вместо данных. Проверьте путь к API.")
+        }
+        setData(res)
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
   }, [userId])
 
-  if (loading) return <p className="p-8 text-center text-[#4b6080] text-xs">Загрузка данных пользователя...</p>
-  if (error) return <p className="p-8 text-center text-red-400 text-xs">{error}</p>
-  if (!data) return null
+  if (loading) return <div className="p-10 text-center text-cyan-500 text-xs animate-pulse">Получение глубоких данных пользователя...</div>
+  if (error) return (
+    <div className="p-6 bg-red-500/5 border border-red-500/20 rounded-xl">
+      <p className="text-red-400 text-xs font-mono mb-2">Критическая ошибка данных:</p>
+      <p className="text-red-500 text-[10px] bg-black/30 p-2 rounded">{error}</p>
+      <button onClick={onClose} className="mt-4 text-[10px] text-gray-500 underline">Закрыть панель</button>
+    </div>
+  )
 
   const tabs = [
-    { key: 'accounts',  label: 'Аккаунты',  icon: User,       count: data.accounts?.length || 0 },
-    { key: 'proxies',   label: 'Прокси',    icon: Globe,      count: data.proxies?.length || 0 },
-    { key: 'templates', label: 'Шаблоны',   icon: Layers,     count: data.templates?.length || 0 },
-    { key: 'tasks',     label: 'Задачи',    icon: ListChecks, count: data.tasks?.length || 0 },
+    { id: 'accounts', label: 'Аккаунты', icon: User, count: data?.accounts?.length || 0 },
+    { id: 'proxies', label: 'Прокси', icon: Globe, count: data?.proxies?.length || 0 },
+    { id: 'templates', label: 'Шаблоны', icon: Layers, count: data?.templates?.length || 0 },
+    { id: 'tasks', label: 'Задачи', icon: ListChecks, count: data?.tasks?.length || 0 },
   ]
 
   return (
-    <div className="bg-[#080c12] border border-[#1c2333] rounded-xl overflow-hidden shadow-2xl">
-      <div className="flex gap-0 border-b border-[#1c2333] bg-[#0a0f18]">
-        {tabs.map(({ key, label, icon: Icon, count }) => (
-          <button key={key} onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 px-5 py-3 text-[10px] font-bold tracking-widest uppercase border-b-2 transition-colors ${
-              tab === key ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-[#4b6080] hover:text-gray-300'
-            }`}
-          >
-            <Icon size={12} /> {label} <span className="ml-1 opacity-50">({count})</span>
+    <div className="bg-[#05070a] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+      {/* Навигация */}
+      <div className="flex items-center gap-0 bg-white/5 border-b border-white/5">
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 py-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-cyan-500/10 text-cyan-400 border-b-2 border-cyan-500' : 'text-gray-500 hover:text-gray-300'}`}>
+            <tab.icon size={12} /> {tab.label} <span className="opacity-30">[{tab.count}]</span>
           </button>
         ))}
-        <button onClick={onClose} className="ml-auto px-4 text-gray-600 hover:text-red-400 transition-colors"><XCircle size={16} /></button>
+        <button onClick={onClose} className="ml-auto px-4 text-gray-600 hover:text-red-500"><XCircle size={16} /></button>
       </div>
 
-      <div className="p-2">
-        {tab === 'accounts' && (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-[#3d4f6a] text-[9px] uppercase tracking-widest">
-                <th className="px-4 py-2 text-left font-semibold">Аккаунт</th>
-                <th className="px-4 py-2 text-left font-semibold">Прокси</th>
-                <th className="px-4 py-2 text-left font-semibold">Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.accounts || []).map(a => (
-                <tr key={a.id} className="border-t border-[#1c2333]/40">
-                  <td className="px-4 py-2 text-white">{a.name}</td>
-                  <td className="px-4 py-2 text-[#4b6080]">{a.proxy_name || '—'}</td>
-                  <td className="px-4 py-2">
-                    <span className={`text-[9px] font-bold ${a.is_valid ? 'text-green-400' : 'text-red-400'}`}>
-                      {a.is_valid ? 'VALID' : 'INVALID'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {tab === 'proxies' && (
-          <div className="p-4 text-[#4b6080] text-xs">
-            {(data.proxies || []).length === 0 ? "Прокси не найдены" : (
-              <div className="grid grid-cols-1 gap-2">
-                {data.proxies.map(p => (
-                  <div key={p.id} className="p-2 border border-[#1c2333] rounded bg-white/[0.02]">
-                    <p className="text-white font-mono">{p.ip}:{p.port}</p>
-                    <p className="text-[10px]">{p.name} | {p.login || 'no auth'}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === 'tasks' && (
-          <div className="divide-y divide-[#1c2333]/40">
-            {(data.tasks || []).map(t => (
-              <div key={t.id} className="p-3">
-                <div className="flex justify-between items-center mb-1">
-                   <span className="text-white text-xs font-bold">{t.template_name || 'Задача'}</span>
-                   <span className={statusBadge(t.status)}>{t.status}</span>
+      <div className="p-4">
+        {/* АККАУНТЫ */}
+        {activeTab === 'accounts' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {data.accounts?.map(acc => (
+              <div key={acc.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex justify-between items-center">
+                <div>
+                  <p className="text-xs font-bold text-white">{acc.name}</p>
+                  <p className="text-[10px] text-gray-500">Прокси: {acc.proxy_name || 'Прямое соед.'}</p>
                 </div>
-                <div className="flex gap-2">
-                   <button onClick={() => setOpenLogsFor(openLogsFor === t.id ? null : t.id)} className="text-[10px] text-cyan-500 hover:underline">
-                     {openLogsFor === t.id ? 'Скрыть логи' : 'Показать логи'}
-                   </button>
-                </div>
-                {openLogsFor === t.id && <TaskLogsPanel taskId={t.id} onClose={() => setOpenLogsFor(null)} />}
+                <span className={`text-[9px] font-black ${acc.is_valid ? 'text-green-500' : 'text-red-500'}`}>{acc.is_valid ? 'VALID' : 'ERROR'}</span>
               </div>
             ))}
           </div>
         )}
 
-        {tab === 'templates' && (
-          <div className="p-4 text-gray-500 text-xs text-center">Шаблоны пользователя ({data.templates?.length || 0})</div>
+        {/* ШАБЛОНЫ (ДЕТАЛЬНО) */}
+        {activeTab === 'templates' && (
+          <div className="space-y-2">
+            {data.templates?.map(tpl => (
+              <div key={tpl.id} className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden">
+                <button onClick={() => setExpandedId(expandedId === tpl.id ? null : tpl.id)} className="w-full px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors">
+                   <div className="flex items-center gap-3">
+                     <Layers size={14} className="text-cyan-500" />
+                     <span className="text-xs font-bold text-white">{tpl.name}</span>
+                   </div>
+                   <div className="flex items-center gap-4">
+                     <span className="text-[10px] text-gray-500">{tpl.actions?.length || 0} действий</span>
+                     {expandedId === tpl.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                   </div>
+                </button>
+                {expandedId === tpl.id && (
+                  <div className="px-4 pb-4 pt-2 border-t border-white/5 bg-black/20 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[9px] text-gray-600 uppercase font-bold mb-1">Текст комментария/поста:</p>
+                        <div className="p-2 bg-black/40 rounded text-[11px] text-gray-300 italic">"{tpl.comment_text || 'Текст не задан'}"</div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[9px] text-gray-600 uppercase font-bold mb-1">Параметры:</p>
+                        <p className="text-[10px] text-gray-400">Задержка: <span className="text-white">{tpl.delay_min}-{tpl.delay_max} сек.</span></p>
+                        <p className="text-[10px] text-gray-400">Тип реакции: <span className="text-purple-400">{tpl.reaction_type || 'Нет'}</span></p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-gray-600 uppercase font-bold mb-2">Очередь действий:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {tpl.actions?.map((act, idx) => (
+                          <div key={idx} className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded text-[10px] text-cyan-400">
+                            {idx+1}. {ACTION_LABELS[act.action_type] || act.action_type} ({act.delay}с)
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ЗАДАЧИ (ДЕТАЛЬНО) */}
+        {activeTab === 'tasks' && (
+          <div className="space-y-3">
+            {data.tasks?.map(task => (
+              <div key={task.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white">{task.template_name}</span>
+                      <span className={statusBadge(task.status)}>{task.status}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">Создана: {new Date(task.created_at).toLocaleString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-gray-500">Прогресс:</p>
+                    <p className="text-xs font-mono text-cyan-400">{task.progress_current} / {task.progress_total}</p>
+                  </div>
+                </div>
+                
+                {/* ССЫЛКА НА ПОСТ (ТО ЧТО ВЫ ПРОСИЛИ) */}
+                <div className="mb-3">
+                  <p className="text-[9px] text-gray-600 uppercase font-bold mb-1">Целевые ссылки:</p>
+                  {task.post_urls?.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[10px] text-cyan-500 hover:text-cyan-400 truncate bg-cyan-500/5 p-1 rounded mb-1">
+                      <ExternalLink size={10} /> {url}
+                    </a>
+                  ))}
+                </div>
+
+                <button onClick={() => setExpandedId(expandedId === `task-${task.id}` ? null : `task-${task.id}`)} className="text-[10px] font-bold text-gray-500 hover:text-white flex items-center gap-1 transition-colors">
+                  <ScrollText size={12} /> {expandedId === `task-${task.id}` ? 'Скрыть логи выполнения' : 'Посмотреть детальные логи'}
+                </button>
+                {expandedId === `task-${task.id}` && <TaskLogsPanel taskId={task.id} />}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* ПРОКСИ */}
+        {activeTab === 'proxies' && (
+          <div className="grid grid-cols-1 gap-2">
+            {data.proxies?.map(p => (
+              <div key={p.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-4">
+                <Globe size={16} className="text-gray-600" />
+                <div className="flex-1">
+                   <p className="text-xs font-mono text-white">{p.ip}:{p.port}</p>
+                   <p className="text-[9px] text-gray-500 font-bold uppercase">{p.name} | {p.type || 'SOCKS5'}</p>
+                </div>
+                <div className="text-right">
+                   <p className="text-[10px] text-gray-400">Ротация: {p.rotate_delay}с</p>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-// --- Панель Поддержки ---
-
-function SupportAdminPanel() {
-  const [tickets, setTickets] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState(null)
-
-  const load = () => {
-    setLoading(true)
-    adminGetSupportTickets().then(setTickets).catch(() => {}).finally(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [])
-
-  if (selectedId) return (
-    <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-5">
-      <button onClick={() => setSelectedId(null)} className="mb-4 text-xs text-cyan-400 hover:underline">← Назад к списку</button>
-      <SupportTicketThread ticketId={selectedId} onClose={() => { setSelectedId(null); load() }} />
-    </div>
-  )
-
-  return (
-    <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#1c2333] flex items-center justify-between">
-        <span className="text-white font-bold">Тикеты поддержки</span>
-        <button onClick={load} className="text-xs text-[#4b6080] hover:text-white">Обновить</button>
-      </div>
-      <div className="divide-y divide-[#1c2333]">
-        {tickets.map(t => (
-          <div key={t.id} onClick={() => setSelectedId(t.id)} className="p-4 hover:bg-white/[0.02] cursor-pointer flex justify-between items-center">
-            <div>
-              <p className="text-white text-sm font-medium">{t.subject}</p>
-              <p className="text-[10px] text-gray-500">{t.user_email} • {new Date(t.updated_at).toLocaleString()}</p>
-            </div>
-            <span className={t.status === 'open' ? 'text-cyan-400 text-[10px] font-bold' : 'text-gray-600 text-[10px]'}>{t.status.toUpperCase()}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function SupportTicketThread({ ticketId, onClose }) {
-  const [ticket, setTicket] = useState(null)
-  const [reply, setReply] = useState('')
-
-  useEffect(() => {
-    adminGetSupportTicket(ticketId).then(setTicket)
-  }, [ticketId])
-
-  const send = async (e) => {
-    e.preventDefault()
-    if (!reply.trim()) return
-    await adminReplySupportTicket(ticketId, reply)
-    setReply('')
-    adminGetSupportTicket(ticketId).then(setTicket)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="max-h-[400px] overflow-y-auto space-y-2 p-2">
-        {ticket?.messages?.map(m => (
-          <div key={m.id} className={`p-3 rounded-xl max-w-[80%] ${m.sender_type === 'admin' ? 'ml-auto bg-purple-500/10 border border-purple-500/20' : 'bg-[#151b27]'}`}>
-            <p className="text-xs text-white">{m.text}</p>
-            <p className="text-[9px] text-gray-500 mt-1">{new Date(m.created_at).toLocaleString()}</p>
-          </div>
-        ))}
-      </div>
-      <form onSubmit={send} className="flex gap-2">
-        <input className="flex-1 bg-[#080c12] border border-[#1c2333] rounded-lg px-4 py-2 text-white text-sm" value={reply} onChange={e => setReply(e.target.value)} placeholder="Ответ..." />
-        <button type="submit" className="bg-purple-600 px-4 py-2 rounded-lg text-white text-xs font-bold">Отправить</button>
-      </form>
-    </div>
-  )
-}
-
-// --- Основной компонент Admin ---
-
+// --- ОСНОВНОЙ КОМПОНЕНТ АДМИНКИ ---
 export default function Admin() {
-  const [list, setList] = useState([])
+  const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [expandedUser, setExpandedUser] = useState(null)
   const [activeTab, setActiveTab] = useState('users')
+  const [expandedUser, setExpandedUser] = useState(null)
   const [createModal, setCreateModal] = useState(false)
-  const [createForm, setCreateForm] = useState({ email: '', password: '', username: '', is_email_verified: false })
 
   const load = () => {
     setLoading(true)
-    adminGetUsers().then(setList).catch(() => {}).finally(() => setLoading(false))
+    adminGetUsers().then(setUsers).finally(() => setLoading(false))
   }
 
   useEffect(load, [])
 
-  const handleToggleAdmin = async (u) => {
-    await adminUpdateUser(u.id, { is_admin: !u.is_admin })
-    load()
-  }
-
-  const handleDelete = async (u) => {
-    if (confirm('Удалить навсегда?')) {
-      await adminDeleteUser(u.id)
-      load()
-    }
-  }
-
-  const handleCreate = async (e) => {
-    e.preventDefault()
-    try {
-      await adminCreateUser(createForm)
-      setCreateModal(false)
-      load()
-    } catch (err) { alert(err.message) }
-  }
-
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6 min-h-screen text-gray-200">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <ShieldCheck className="text-cyan-400" size={28} /> Админ-центр
+    <div className="min-h-screen bg-[#020408] text-gray-300 p-6 font-sans">
+      {/* Шапка */}
+      <div className="max-w-7xl mx-auto flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-black text-white flex items-center gap-3">
+          <ShieldCheck className="text-cyan-500" size={32} /> АДМИН-ЦЕНТР
         </h1>
-        <div className="flex gap-2 bg-[#0d1117] p-1 rounded-xl border border-[#1c2333]">
-          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'users' ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'text-gray-500 hover:text-gray-300'}`}>Пользователи</button>
-          <button onClick={() => setActiveTab('support')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'support' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-500 hover:text-gray-300'}`}>Поддержка</button>
+        <div className="flex bg-[#0d1117] p-1.5 rounded-2xl border border-white/5">
+          <button onClick={() => setActiveTab('users')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${activeTab === 'users' ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'text-gray-500 hover:text-white'}`}>ПОЛЬЗОВАТЕЛИ</button>
+          <button onClick={() => setActiveTab('support')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${activeTab === 'support' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-500 hover:text-white'}`}>ПОДДЕРЖКА</button>
         </div>
       </div>
 
-      {activeTab === 'users' ? (
-        <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl overflow-hidden shadow-sm">
-          <div className="p-5 border-b border-[#1c2333] flex justify-between items-center bg-[#151b27]/30">
-            <span className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Управление базой</span>
-            <button onClick={() => setCreateModal(true)} className="bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-black px-4 py-2 rounded-lg transition-all">ДОБАВИТЬ ЮЗЕРА</button>
-          </div>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="text-[10px] text-gray-500 uppercase tracking-tighter border-b border-[#1c2333]">
-                <th className="px-6 py-4 text-left font-bold">Пользователь</th>
-                <th className="px-6 py-4 text-left font-bold">Роль / Почта</th>
-                <th className="px-6 py-4 text-left font-bold">План</th>
-                <th className="px-6 py-4 text-right font-bold">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map(user => (
-                <Fragment key={user.id}>
-                  <tr className={`border-b border-[#1c2333]/50 hover:bg-white/[0.01] transition-colors ${expandedUser === user.id ? 'bg-cyan-500/5' : ''}`}>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-white font-bold text-sm">{user.email || user.username}</span>
-                        <span className="text-[9px] text-gray-600 font-mono">UID: {user.id}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {user.is_admin ? <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-black">ADMIN</span> : <span className="text-[9px] bg-gray-500/10 text-gray-500 px-1.5 py-0.5 rounded">USER</span>}
-                        {user.is_email_verified && <CheckCircle size={12} className="text-green-500" />}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded ${user.subscription === 'pro' ? 'text-amber-500 bg-amber-500/10' : 'text-gray-500 bg-gray-500/10'}`}>
-                        {user.subscription?.toUpperCase() || 'FREE'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-1">
-                        <button onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)} className={`p-2 rounded-lg transition-colors ${expandedUser === user.id ? 'text-cyan-400 bg-cyan-400/10' : 'text-gray-600 hover:text-cyan-400'}`}>
-                          <Layers size={18} />
-                        </button>
-                        <button onClick={() => handleToggleAdmin(user)} className="p-2 text-gray-600 hover:text-purple-400"><ShieldCheck size={18} /></button>
-                        <button onClick={() => handleDelete(user)} className="p-2 text-gray-600 hover:text-red-500"><Trash2 size={18} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedUser === user.id && (
-                    <tr className="bg-[#05070a]">
-                      <td colSpan={4} className="p-4 border-b border-[#1c2333]">
-                        <UserDetailPanel userId={user.id} onClose={() => setExpandedUser(null)} />
+      <div className="max-w-7xl mx-auto">
+        {activeTab === 'users' ? (
+          <div className="bg-[#0d1117] border border-white/5 rounded-3xl overflow-hidden shadow-sm">
+            <div className="px-8 py-6 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-gray-500">Управление базой</h2>
+              <button onClick={() => setCreateModal(true)} className="bg-cyan-500 hover:bg-cyan-400 text-white text-[10px] font-black px-6 py-3 rounded-xl transition-all shadow-lg shadow-cyan-500/10">ДОБАВИТЬ ЮЗЕРА</button>
+            </div>
+
+            <table className="w-full">
+              <thead>
+                <tr className="text-[10px] text-gray-600 uppercase font-black border-b border-white/5">
+                  <th className="px-8 py-5 text-left">Пользователь</th>
+                  <th className="px-8 py-5 text-left">Роль / Почта</th>
+                  <th className="px-8 py-5 text-left">План</th>
+                  <th className="px-8 py-5 text-right">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(user => (
+                  <Fragment key={user.id}>
+                    <tr className={`border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors ${expandedUser === user.id ? 'bg-cyan-500/[0.03]' : ''}`}>
+                      <td className="px-8 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-white font-bold text-sm">{user.email || user.username}</span>
+                          <span className="text-[9px] text-gray-600 font-mono">UID: {user.id}</span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] px-2 py-0.5 rounded font-black ${user.is_admin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : 'bg-gray-500/10 text-gray-500'}`}>{user.is_admin ? 'ADMIN' : 'USER'}</span>
+                          {user.is_email_verified && <CheckCircle size={14} className="text-green-500" />}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                         <span className={`text-[10px] font-black px-3 py-1 rounded-lg ${user.subscription === 'pro' ? 'text-amber-500 bg-amber-500/10 border border-amber-500/10' : 'text-gray-600 bg-gray-500/5'}`}>{user.subscription?.toUpperCase() || 'FREE'}</span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)} className={`p-2.5 rounded-xl transition-all ${expandedUser === user.id ? 'bg-cyan-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 hover:text-cyan-400'}`}>
+                            <Layers size={18} />
+                          </button>
+                          <button onClick={async () => { await adminDeleteUser(user.id); load() }} className="p-2.5 bg-white/5 rounded-xl text-gray-500 hover:text-red-500 transition-all"><Trash2 size={18} /></button>
+                        </div>
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-          {loading && <div className="p-10 text-center text-gray-600 text-xs animate-pulse">Загрузка списка...</div>}
-        </div>
-      ) : (
-        <SupportAdminPanel />
-      )}
-
-      {createModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-            <h2 className="text-lg font-bold text-white mb-4">Новый аккаунт</h2>
-            <form onSubmit={handleCreate} className="space-y-3">
-              <input type="email" placeholder="Email" className="w-full bg-[#080c12] border border-[#1c2333] rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-cyan-500" value={createForm.email} onChange={e => setCreateForm({...createForm, email: e.target.value})} required />
-              <input type="password" placeholder="Пароль" className="w-full bg-[#080c12] border border-[#1c2333] rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-cyan-500" value={createForm.password} onChange={e => setCreateForm({...createForm, password: e.target.value})} required />
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setCreateModal(false)} className="flex-1 py-3 text-xs font-bold text-gray-500">ОТМЕНА</button>
-                <button type="submit" className="flex-1 py-3 bg-cyan-600 text-white rounded-xl text-xs font-bold">СОЗДАТЬ</button>
-              </div>
-            </form>
+                    {expandedUser === user.id && (
+                      <tr className="bg-black/40">
+                        <td colSpan={4} className="px-8 py-6">
+                           <UserDetailPanel userId={user.id} onClose={() => setExpandedUser(null)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+            {loading && <div className="p-20 text-center text-cyan-500 text-xs font-bold animate-pulse tracking-widest">СИНХРОНИЗАЦИЯ БАЗЫ...</div>}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="p-20 text-center text-gray-600 border-2 border-dashed border-white/5 rounded-3xl uppercase font-black tracking-widest text-xs">Раздел поддержки в разработке</div>
+        )}
+      </div>
     </div>
   )
 }

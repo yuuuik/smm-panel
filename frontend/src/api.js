@@ -4,7 +4,23 @@ export async function clearAllLogs() {
   if (!r.ok) throw new Error('Не удалось очистить логи');
   return r.json();
 }
-const API_BASE = '/api';
+function getApiBase() {
+  const envBase = import.meta.env.VITE_API_BASE;
+  if (envBase) return envBase.replace(/\/$/, '');
+
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname, port } = window.location;
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+    const isStandaloneFrontend = port === '5173' || port === '4173';
+    if (isLocal && isStandaloneFrontend) {
+      return `${protocol}//127.0.0.1:8000/api`;
+    }
+  }
+
+  return '/api';
+}
+
+const API_BASE = getApiBase();
 
 function getToken() {
   return localStorage.getItem('token');
@@ -380,8 +396,8 @@ export async function adminGetUserDetail(userId) {
   return readJsonResponse(r, 'Ошибка загрузки детального просмотра');
 }
 
-export async function adminGetUserTasks(userId) {
-  const r = await fetch(`${API_BASE}/admin/users/${userId}/tasks`, { headers: headers() });
+export async function adminGetUserTasks(userId, page = 1, pageSize = 10) {
+  const r = await fetch(`${API_BASE}/admin/users/${userId}/tasks?page=${page}&page_size=${pageSize}`, { headers: headers() });
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка'); }
   return r.json();
 }

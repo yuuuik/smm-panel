@@ -350,6 +350,12 @@ export async function adminCreateUser(data) {
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка'); }
   return r.json();
 }
+export async function adminGetUserDetail(userId) {
+  const r = await fetch(`${API_BASE}/admin/users/${userId}/detail`, { headers: headers() });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 export async function adminGetUserTasks(userId) {
   const r = await fetch(`${API_BASE}/admin/users/${userId}/tasks`, { headers: headers() });
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка'); }

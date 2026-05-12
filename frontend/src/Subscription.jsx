@@ -151,7 +151,7 @@ export default function Subscription() {
               <ul className="space-y-2">
                 <li className="flex items-center gap-2 text-sm text-gray-400">
                   <CheckCircle size={13} className="text-gray-600 flex-shrink-0" />
-                  2 задачи за 24 часа
+                  5 задач на аккаунт (без сброса)
                 </li>
                 <li className="flex items-center gap-2 text-sm text-gray-400">
                   <CheckCircle size={13} className="text-gray-600 flex-shrink-0" />
@@ -202,7 +202,7 @@ export default function Subscription() {
 
           {/* Usage / Status block */}
           <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-5">
-            <h3 className="text-xs font-bold text-[#4b6080] tracking-widest uppercase mb-4">Использование за 24 часа</h3>
+            <h3 className="text-xs font-bold text-[#4b6080] tracking-widest uppercase mb-4">Использование (всего на аккаунт)</h3>
             {isPro ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -244,7 +244,7 @@ export default function Subscription() {
             ) : (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-400">Задачи запущено</span>
+                  <span className="text-sm text-gray-400">Использовано задач</span>
                   <span className={`text-sm font-bold ${tasksToday >= tasksLimit ? 'text-red-400' : 'text-white'}`}>
                     {tasksToday} / {tasksLimit}
                   </span>
@@ -259,19 +259,13 @@ export default function Subscription() {
                   <div className="text-sm text-red-400">
                     <div className="flex items-center gap-2 font-bold">
                       <AlertCircle size={14} />
-                      Лимит исчерпан. Перейдите на Pro.
+                      Лимит исчерпан. Перейдите на Pro для безлимитных задач.
                     </div>
-                    {countdown && (
-                      <div className="flex items-center gap-2 mt-1.5 text-xs text-red-300">
-                        <Clock size={12} />
-                        Сброс через: <span className="font-mono font-bold text-red-200">{countdown}</span>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Clock size={13} />
-                    Осталось задач: <span className="text-white font-semibold">{remaining}</span>
+                    Осталось бесплатных задач: <span className="text-white font-semibold">{remaining}</span>
                   </div>
                 )}
               </div>

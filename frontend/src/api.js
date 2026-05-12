@@ -435,11 +435,14 @@ export async function getSubscriptionInfo() {
   if (!r.ok) throw new Error('Ошибка загрузки подписки');
   return r.json();
 }
-export async function adminSetUserSubscription(userId, subscription, subscriptionExpiresAt = null) {
+export async function adminSetUserSubscription(userId, subscription, subscriptionExpiresAt = null, days = null) {
+  const body = { subscription };
+  if (days) body.days = days;
+  if (subscriptionExpiresAt) body.subscription_expires_at = subscriptionExpiresAt;
   const r = await fetch(`${API_BASE}/admin/users/${userId}/subscription`, {
     method: 'PATCH',
     headers: headers(),
-    body: JSON.stringify({ subscription, subscription_expires_at: subscriptionExpiresAt }),
+    body: JSON.stringify(body),
   });
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Ошибка'); }
   return r.json();

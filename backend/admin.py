@@ -45,30 +45,31 @@ class AdminCreateUser(BaseModel):
     is_email_verified: bool = False
 
 
+def _build_user_response(u: User, db: Session) -> AdminUserResponse:
+    return AdminUserResponse(
+        id=u.id,
+        username=u.username,
+        email=u.email,
+        telegram=u.telegram,
+        is_admin=bool(u.is_admin),
+        is_email_verified=bool(u.is_email_verified),
+        created_at=u.created_at,
+        accounts_count=db.query(FacebookAccount).filter(FacebookAccount.user_id == u.id).count(),
+        proxies_count=db.query(Proxy).filter(Proxy.user_id == u.id).count(),
+        templates_count=db.query(Template).filter(Template.user_id == u.id).count(),
+        tasks_count=db.query(Task).filter(Task.user_id == u.id).count(),
+        subscription=u.subscription or "free",
+        subscription_expires_at=u.subscription_expires_at,
+    )
+
+
 @router.get("/users", response_model=List[AdminUserResponse])
 def list_users(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
     users = db.query(User).order_by(User.created_at).all()
-    result = []
-    for u in users:
-        result.append(AdminUserResponse(
-            id=u.id,
-            username=u.username,
-            email=u.email,
-            telegram=u.telegram,
-            is_admin=bool(u.is_admin),
-            is_email_verified=bool(u.is_email_verified),
-            created_at=u.created_at,
-            accounts_count=db.query(FacebookAccount).filter(FacebookAccount.user_id == u.id).count(),
-            proxies_count=db.query(Proxy).filter(Proxy.user_id == u.id).count(),
-            templates_count=db.query(Template).filter(Template.user_id == u.id).count(),
-            tasks_count=db.query(Task).filter(Task.user_id == u.id).count(),
-            subscription=u.subscription or "free",
-            subscription_expires_at=u.subscription_expires_at,
-        ))
-    return result
+    return [_build_user_response(u, db) for u in users]
 
 
 @router.patch("/users/{user_id}", response_model=AdminUserResponse)
@@ -93,21 +94,7 @@ def update_user(
         u.password_hash = get_password_hash(data.new_password)
     db.commit()
     db.refresh(u)
-    return AdminUserResponse(
-        id=u.id,
-        username=u.username,
-        email=u.email,
-        telegram=u.telegram,
-        is_admin=bool(u.is_admin),
-        is_email_verified=bool(u.is_email_verified),
-        created_at=u.created_at,
-        accounts_count=db.query(FacebookAccount).filter(FacebookAccount.user_id == u.id).count(),
-        proxies_count=db.query(Proxy).filter(Proxy.user_id == u.id).count(),
-        templates_count=db.query(Template).filter(Template.user_id == u.id).count(),
-        tasks_count=db.query(Task).filter(Task.user_id == u.id).count(),
-        subscription=u.subscription or "free",
-        subscription_expires_at=u.subscription_expires_at,
-    )
+    return _build_user_response(u, db)
 
 
 @router.post("/users", response_model=AdminUserResponse)
@@ -133,13 +120,7 @@ def create_user(
     db.add(u)
     db.commit()
     db.refresh(u)
-    return AdminUserResponse(
-        id=u.id, username=u.username, email=u.email, telegram=u.telegram,
-        is_admin=False, is_email_verified=bool(u.is_email_verified),
-        created_at=u.created_at,
-        accounts_count=0, proxies_count=0, templates_count=0, tasks_count=0,
-        subscription="free", subscription_expires_at=None,
-    )
+    return _build_user_response(u, db)
 
 
 @router.delete("/users/{user_id}")
@@ -158,47 +139,20 @@ def delete_user(
     return {"ok": True}
 
 
-@router.get("/users/{user_id}/tasks")
-def get_user_tasks(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    tasks = (
-        db.query(Task)
-        .filter(Task.user_id == user_id)
-        .order_by(Task.created_at.desc())
-        .limit(50)
-        .all()
-    )
-    result = []
-    for t in tasks:
-        result.append({
-            "id": t.id,
-            "status": t.status,
-            "post_url": t.post_url,
-            "template_name": t.template.name if t.template else None,
-            "progress_current": t.progress_current,
-            "progress_total": t.progress_total,
-            "error_message": t.error_message,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "started_at": t.started_at.isoformat() if t.started_at else None,
-            "finished_at": t.finished_at.isoformat() if t.finished_at else None,
-        })
-    return result
-
-
 @router.get("/users/{user_id}/detail")
 def get_user_detail(
     user_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    """Return accounts, proxies, templates (with actions+accounts) and tasks for a user."""
-    from .models import FacebookAccount, Proxy, Template, TemplateAction, TemplateAccount, Task
+    """Return accounts, proxies, templates (with actions) and tasks (with post_urls) for a user."""
+    from .models import TemplateAction, TemplateAccount
 
     # Accounts
     accounts = db.query(FacebookAccount).filter(FacebookAccount.user_id == user_id).all()
+    proxies = db.query(Proxy).filter(Proxy.user_id == user_id).all()
+    proxy_map = {p.id: p.name for p in proxies}
+
     accounts_data = [
         {
             "id": a.id,
@@ -206,12 +160,11 @@ def get_user_detail(
             "is_valid": a.is_valid,
             "last_check": a.last_check.isoformat() if a.last_check else None,
             "proxy_id": a.proxy_id,
+            "proxy_name": proxy_map.get(a.proxy_id, "—") if a.proxy_id else "—",
         }
         for a in accounts
     ]
 
-    # Proxies
-    proxies = db.query(Proxy).filter(Proxy.user_id == user_id).all()
     proxies_data = [
         {
             "id": p.id,
@@ -224,22 +177,19 @@ def get_user_detail(
         }
         for p in proxies
     ]
-    proxy_map = {p.id: p.name for p in proxies}
 
-    # Enrich accounts with proxy name
-    for a_dict, a_obj in zip(accounts_data, accounts):
-        a_dict["proxy_name"] = proxy_map.get(a_obj.proxy_id, "—") if a_obj.proxy_id else "—"
-
-    # Templates with full detail
+    # Templates with full actions detail
     templates = db.query(Template).filter(Template.user_id == user_id).all()
     templates_data = []
     for t in templates:
-        actions = [
+        actions_list = [
             {
                 "order": act.action_order,
                 "action_type": act.action_type,
                 "reaction_type": act.reaction_type,
                 "text": act.text,
+                "image_path": act.image_path,
+                "target_comment": act.target_comment,
                 "account_name": act.account.name if act.account else None,
                 "delay": act.delay,
             }
@@ -259,7 +209,7 @@ def get_user_detail(
             "delay_min": t.delay_min,
             "delay_max": t.delay_max,
             "created_at": t.created_at.isoformat() if t.created_at else None,
-            "actions": actions,
+            "actions": actions_list,
             "accounts": linked_accounts,
         })
 
@@ -281,6 +231,7 @@ def get_user_detail(
             "progress_total": t.progress_total,
             "error_message": t.error_message,
             "created_at": t.created_at.isoformat() if t.created_at else None,
+            "started_at": t.started_at.isoformat() if t.started_at else None,
             "finished_at": t.finished_at.isoformat() if t.finished_at else None,
         }
         for t in tasks
@@ -294,6 +245,9 @@ def get_user_detail(
     }
 
 
+# ── Task logs — ЗАРЕГИСТРИРОВАННЫЙ endpoint ──────────────────────────────────
+
+@router.get("/tasks/{task_id}/logs")
 def get_task_logs(
     task_id: int,
     limit: int = Query(200, le=500),
@@ -303,7 +257,7 @@ def get_task_logs(
     logs = (
         db.query(LogEntry)
         .filter(LogEntry.task_id == task_id)
-        .order_by(LogEntry.created_at.desc())
+        .order_by(LogEntry.created_at)
         .limit(limit)
         .all()
     )
@@ -318,6 +272,47 @@ def get_task_logs(
         }
         for l in logs
     ]
+
+
+# ── Subscription management ───────────────────────────────────────────────────
+
+class AdminSubscriptionUpdate(BaseModel):
+    subscription: str          # "free" or "pro"
+    days: Optional[int] = None # сколько дней добавить (если pro)
+    subscription_expires_at: Optional[datetime] = None
+
+
+@router.patch("/users/{user_id}/subscription")
+def set_user_subscription(
+    user_id: int,
+    data: AdminSubscriptionUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    if data.subscription not in ("free", "pro"):
+        raise HTTPException(422, "Подписка должна быть 'free' или 'pro'")
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(404, "Пользователь не найден")
+    u.subscription = data.subscription
+    if data.subscription == "pro":
+        if data.days:
+            # Добавляем к текущей дате истечения (или от сейчас)
+            base = u.subscription_expires_at if (u.subscription_expires_at and u.subscription_expires_at > datetime.utcnow()) else datetime.utcnow()
+            u.subscription_expires_at = base + timedelta(days=data.days)
+        elif data.subscription_expires_at:
+            u.subscription_expires_at = data.subscription_expires_at
+        else:
+            u.subscription_expires_at = datetime.utcnow() + timedelta(days=30)
+    else:
+        u.subscription_expires_at = None
+    db.commit()
+    db.refresh(u)
+    return {
+        "id": u.id,
+        "subscription": u.subscription,
+        "subscription_expires_at": u.subscription_expires_at,
+    }
 
 
 # ── Support ticket admin endpoints ───────────────────────────────────────────
@@ -392,7 +387,6 @@ def admin_reply_ticket(
         raise HTTPException(404, "Обращение не найдено")
     if not data.text.strip():
         raise HTTPException(422, "Ответ не может быть пустым")
-
     msg = SupportMessage(ticket_id=t.id, sender_type="admin", text=data.text.strip())
     db.add(msg)
     if t.status == "closed":
@@ -432,39 +426,3 @@ def admin_delete_ticket(
     db.delete(t)
     db.commit()
     return {"ok": True}
-
-
-# ── Subscription management ───────────────────────────────────────────────────
-
-class AdminSubscriptionUpdate(BaseModel):
-    subscription: str  # "free" or "pro"
-    subscription_expires_at: Optional[datetime] = None
-
-
-@router.patch("/users/{user_id}/subscription")
-def set_user_subscription(
-    user_id: int,
-    data: AdminSubscriptionUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    if data.subscription not in ("free", "pro"):
-        raise HTTPException(422, "Подписка должна быть 'free' или 'pro'")
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(404, "Пользователь не найден")
-    u.subscription = data.subscription
-    if data.subscription == "pro":
-        if data.subscription_expires_at:
-            u.subscription_expires_at = data.subscription_expires_at
-        else:
-            u.subscription_expires_at = datetime.utcnow() + timedelta(days=30)
-    else:
-        u.subscription_expires_at = None
-    db.commit()
-    db.refresh(u)
-    return {
-        "id": u.id,
-        "subscription": u.subscription,
-        "subscription_expires_at": u.subscription_expires_at,
-    }

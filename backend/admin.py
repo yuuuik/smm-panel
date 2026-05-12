@@ -1,471 +1,892 @@
-"""Admin API: manage users (admin-only)."""
-from typing import List, Optional
-from datetime import datetime, timedelta
+import { useState, useEffect, useRef, Fragment } from 'react'
+import { adminGetUsers, adminUpdateUser, adminDeleteUser, adminGetUserTasks, adminGetTaskLogs, adminCreateUser, adminGetSupportTickets, adminGetSupportTicket, adminReplySupportTicket, adminUpdateSupportTicket, adminDeleteSupportTicket, adminSetUserSubscription, adminGetUserDetail } from './api'
+import { Users, ShieldCheck, Trash2, KeyRound, AlertCircle, CheckCircle, ShieldOff, ChevronDown, ChevronRight, ListChecks, ScrollText, XCircle, UserPlus, MailCheck, Mail, MessageCircle, Send, Lock, Crown, Server, Database, Layers, ExternalLink, User, Globe } from 'lucide-react'
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
+function statusBadge(status) {
+  const map = {
+    running:   'bg-[rgba(6,182,212,0.12)] text-cyan-400 border-cyan-500/40',
+    completed: 'bg-[rgba(34,197,94,0.12)] text-green-400 border-green-500/40',
+    failed:    'bg-[rgba(239,68,68,0.12)] text-red-400 border-red-500/40',
+    stopped:   'bg-[rgba(156,163,175,0.12)] text-gray-400 border-gray-500/40',
+    pending:   'bg-[rgba(168,85,247,0.12)] text-purple-400 border-purple-500/40',
+    error:     'bg-[rgba(239,68,68,0.12)] text-red-400 border-red-500/40',
+  }
+  return `inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${map[status] || map.pending}`
+}
 
-from .database import get_db
-from .models import User, FacebookAccount, Proxy, Template, Task, LogEntry, SupportTicket, SupportMessage
-from .auth import get_current_admin, get_password_hash
+function TaskLogsPanel({ taskId, onClose }) {
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+  useEffect(() => {
+    adminGetTaskLogs(taskId)
+      .then(setLogs)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [taskId])
 
+  return (
+    <div className="mt-2 bg-[#080c12] border border-[#1c2333] rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[#1c2333]">
+        <span className="text-[10px] font-bold text-[#4b6080] uppercase tracking-widest">Логи задачи #{taskId}</span>
+        <button onClick={onClose} className="text-gray-600 hover:text-red-400 transition-colors"><XCircle size={14} /></button>
+      </div>
+      {loading ? (
+        <p className="px-4 py-3 text-[#4b6080] text-xs">Загрузка...</p>
+      ) : logs.length === 0 ? (
+        <p className="px-4 py-3 text-[#3d4f6a] text-xs">Логов нет</p>
+      ) : (
+        <div className="max-h-64 overflow-y-auto">
+          {logs.map((l) => (
+            <div key={l.id} className={`flex items-start gap-3 px-4 py-2 border-b border-[#1c2333]/40 last:border-0 ${!l.success ? 'bg-[rgba(239,68,68,0.04)]' : ''}`}>
+              <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${l.success ? 'bg-cyan-400' : 'bg-red-400'}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">{l.action}</span>
+                  <span className="text-[10px] text-[#4b6080]">{l.account_name}</span>
+                  <span className="text-[9px] text-[#3d4f6a] ml-auto">{l.created_at ? new Date(l.created_at).toLocaleTimeString() : ''}</span>
+                </div>
+                <p className={`text-xs mt-0.5 break-all ${l.success ? 'text-gray-400' : 'text-red-400'}`}>{l.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
-class AdminUserResponse(BaseModel):
-    id: int
-    username: str
-    email: Optional[str]
-    telegram: Optional[str]
-    is_admin: bool
-    is_email_verified: bool
-    created_at: Optional[datetime]
-    accounts_count: int
-    proxies_count: int
-    templates_count: int
-    tasks_count: int
-    subscription: str
-    subscription_expires_at: Optional[datetime]
+function UserDetailPanel({ userId, onClose }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [tab, setTab] = useState('accounts')
+  const [openLogsFor, setOpenLogsFor] = useState(null)
+  const [expandedTemplate, setExpandedTemplate] = useState(null)
 
-    class Config:
-        from_attributes = True
+  useEffect(() => {
+    setLoading(true)
+    setError('')
+    adminGetUserDetail(userId)
+      .then(d => { setData(d); setLoading(false) })
+      .catch(e => { setError(e.message || 'Ошибка загрузки'); setLoading(false) })
+  }, [userId])
 
+  const tabs = [
+    { key: 'accounts',  label: 'Аккаунты',  icon: User,       count: data?.accounts?.length },
+    { key: 'proxies',   label: 'Прокси',    icon: Globe,      count: data?.proxies?.length },
+    { key: 'templates', label: 'Шаблоны',   icon: Layers,     count: data?.templates?.length },
+    { key: 'tasks',     label: 'Задачи',    icon: ListChecks, count: data?.tasks?.length },
+  ]
 
-class AdminUserUpdate(BaseModel):
-    is_admin: Optional[bool] = None
-    new_password: Optional[str] = None
-    is_email_verified: Optional[bool] = None
+  return (
+    <div className="mx-1 mb-4 bg-[#080c12] border border-[#1c2333] rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-[#1c2333] bg-[#0a0f18]">
+        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+        <span className="text-[10px] font-bold text-cyan-400 tracking-[0.2em] uppercase">Детали пользователя</span>
+        <button onClick={onClose} className="ml-auto text-gray-600 hover:text-red-400 transition-colors"><XCircle size={14} /></button>
+      </div>
 
+      {loading && <p className="px-5 py-8 text-[#4b6080] text-xs text-center">Загрузка...</p>}
+      {error && <p className="px-5 py-8 text-red-400 text-xs text-center">{error}</p>}
 
-class AdminCreateUser(BaseModel):
-    email: str
-    password: str
-    username: Optional[str] = None
-    is_email_verified: bool = False
+      {!loading && !error && data && (
+        <>
+          {/* Sub-tabs */}
+          <div className="flex gap-0 border-b border-[#1c2333]">
+            {tabs.map(({ key, label, icon: Icon, count }) => (
+              <button key={key} onClick={() => setTab(key)}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-[10px] font-bold tracking-widest uppercase border-b-2 transition-colors ${
+                  tab === key ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-[#4b6080] hover:text-gray-300'
+                }`}
+              >
+                <Icon size={11} />
+                {label}
+                {count !== undefined && (
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${tab === key ? 'bg-cyan-500/20 text-cyan-300' : 'bg-[#1c2333] text-[#4b6080]'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
 
+          {/* ── ACCOUNTS ── */}
+          {tab === 'accounts' && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[#1c2333]/60">
+                    {['№', 'Имя аккаунта', 'Прокси', 'Последняя проверка', 'Статус'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-widest text-[#3d4f6a]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.accounts.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-6 text-center text-[#3d4f6a]">Нет аккаунтов</td></tr>
+                  ) : data.accounts.map((a, i) => (
+                    <tr key={a.id} className="border-b border-[#1c2333]/30 hover:bg-white/[0.01]">
+                      <td className="px-4 py-2.5 text-[#3d4f6a] font-mono">{i + 1}</td>
+                      <td className="px-4 py-2.5 font-medium text-white">{a.name}</td>
+                      <td className="px-4 py-2.5 text-[#4b6080]">{a.proxy_name}</td>
+                      <td className="px-4 py-2.5 text-[#4b6080]">{a.last_check ? new Date(a.last_check).toLocaleString() : '—'}</td>
+                      <td className="px-4 py-2.5">
+                        {a.is_valid === true && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">Активен</span>}
+                        {a.is_valid === false && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-400/10 text-red-400 border border-red-400/20">Ошибка</span>}
+                        {a.is_valid == null && <span className="text-[#3d4f6a]">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-@router.get("/users", response_model=List[AdminUserResponse])
-def list_users(
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    users = db.query(User).order_by(User.created_at).all()
-    result = []
-    for u in users:
-        result.append(AdminUserResponse(
-            id=u.id,
-            username=u.username,
-            email=u.email,
-            telegram=u.telegram,
-            is_admin=bool(u.is_admin),
-            is_email_verified=bool(u.is_email_verified),
-            created_at=u.created_at,
-            accounts_count=db.query(FacebookAccount).filter(FacebookAccount.user_id == u.id).count(),
-            proxies_count=db.query(Proxy).filter(Proxy.user_id == u.id).count(),
-            templates_count=db.query(Template).filter(Template.user_id == u.id).count(),
-            tasks_count=db.query(Task).filter(Task.user_id == u.id).count(),
-            subscription=u.subscription or "free",
-            subscription_expires_at=u.subscription_expires_at,
-        ))
-    return result
+          {/* ── PROXIES ── */}
+          {tab === 'proxies' && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[#1c2333]/60">
+                    {['№', 'Имя', 'IP:Порт', 'Логин', 'URL ротации', 'Задержка'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-widest text-[#3d4f6a]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.proxies.length === 0 ? (
+                    <tr><td colSpan={6} className="px-4 py-6 text-center text-[#3d4f6a]">Нет прокси</td></tr>
+                  ) : data.proxies.map((p, i) => (
+                    <tr key={p.id} className="border-b border-[#1c2333]/30 hover:bg-white/[0.01]">
+                      <td className="px-4 py-2.5 text-[#3d4f6a] font-mono">{i + 1}</td>
+                      <td className="px-4 py-2.5 font-medium text-white">{p.name}</td>
+                      <td className="px-4 py-2.5 font-mono text-gray-300">{p.ip}:{p.port}</td>
+                      <td className="px-4 py-2.5 text-[#4b6080]">{p.login || '—'}</td>
+                      <td className="px-4 py-2.5 text-[#4b6080] font-mono truncate max-w-[160px]">{p.rotate_url || '—'}</td>
+                      <td className="px-4 py-2.5 text-[#4b6080]">{p.rotate_delay}s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
+          {/* ── TEMPLATES ── */}
+          {tab === 'templates' && (
+            <div className="divide-y divide-[#1c2333]/40">
+              {data.templates.length === 0 ? (
+                <p className="px-5 py-6 text-center text-[#3d4f6a] text-xs">Нет шаблонов</p>
+              ) : data.templates.map((t, i) => (
+                <div key={t.id}>
+                  <button
+                    onClick={() => setExpandedTemplate(expandedTemplate === t.id ? null : t.id)}
+                    className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/[0.01] text-left transition-colors"
+                  >
+                    <span className="text-[10px] font-mono text-[#3d4f6a] w-5">{i + 1}</span>
+                    <span className="font-semibold text-white text-xs flex-1">{t.name}</span>
+                    <div className="flex items-center gap-2 text-[9px] text-[#4b6080]">
+                      <span className="px-2 py-0.5 rounded bg-[#1c2333]">{t.actions.length} действий</span>
+                      <span className="px-2 py-0.5 rounded bg-[#1c2333]">{t.accounts.length} аккаунтов</span>
+                      {t.reaction_type && <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">{t.reaction_type}</span>}
+                    </div>
+                    {expandedTemplate === t.id ? <ChevronDown size={12} className="text-[#4b6080] flex-shrink-0" /> : <ChevronRight size={12} className="text-[#4b6080] flex-shrink-0" />}
+                  </button>
+                  {expandedTemplate === t.id && (
+                    <div className="px-5 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-[#0a0f18] border border-[#1c2333] rounded-xl p-4">
+                        <p className="text-[9px] font-bold text-[#3d4f6a] uppercase tracking-widest mb-3">Основные настройки</p>
+                        <div className="space-y-2 text-xs">
+                          {t.reaction_type && <div className="flex gap-2"><span className="text-[#4b6080] w-28">Реакция:</span><span className="text-white">{t.reaction_type}</span></div>}
+                          {t.comment_text && <div className="flex gap-2"><span className="text-[#4b6080] w-28">Текст коммента:</span><span className="text-white break-all">{t.comment_text}</span></div>}
+                          {t.reply_text && <div className="flex gap-2"><span className="text-[#4b6080] w-28">Текст ответа:</span><span className="text-white break-all">{t.reply_text}</span></div>}
+                          <div className="flex gap-2"><span className="text-[#4b6080] w-28">Задержка:</span><span className="text-white">{t.delay_min}–{t.delay_max}с</span></div>
+                        </div>
+                        {t.accounts.length > 0 && (
+                          <>
+                            <p className="text-[9px] font-bold text-[#3d4f6a] uppercase tracking-widest mt-4 mb-2">Аккаунты ({t.accounts.length})</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {t.accounts.map(a => (
+                                <span key={a.id} className="px-2 py-0.5 rounded-full text-[10px] bg-[#1c2333] text-gray-300 border border-[#2a3a50]">{a.name}</span>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="bg-[#0a0f18] border border-[#1c2333] rounded-xl p-4">
+                        <p className="text-[9px] font-bold text-[#3d4f6a] uppercase tracking-widest mb-3">Действия ({t.actions.length})</p>
+                        {t.actions.length === 0 ? (
+                          <p className="text-[#3d4f6a] text-xs">Нет действий</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {t.actions.map((act, ai) => (
+                              <div key={ai} className="flex items-start gap-2.5 text-xs">
+                                <span className="w-5 h-5 rounded flex-shrink-0 bg-[#1c2333] flex items-center justify-center text-[9px] font-bold text-[#4b6080]">{act.order}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-cyan-400 font-bold uppercase text-[9px]">{ACTION_LABELS[act.action_type] || act.action_type}</span>
+                                    {act.reaction_type && <span className="text-purple-400 text-[9px]">· {act.reaction_type}</span>}
+                                    {act.account_name && <span className="text-[#4b6080] text-[9px]">· {act.account_name}</span>}
+                                    <span className="text-[#3d4f6a] text-[9px] ml-auto">{act.delay}с</span>
+                                  </div>
+                                  {act.text && <p className="text-gray-400 mt-0.5 break-all leading-relaxed">{act.text}</p>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
-@router.patch("/users/{user_id}", response_model=AdminUserResponse)
-def update_user(
-    user_id: int,
-    data: AdminUserUpdate,
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin),
-):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(404, "Пользователь не найден")
-    if u.id == current_admin.id and data.is_admin is False:
-        raise HTTPException(400, "Нельзя снять права администратора у себя")
-    if data.is_admin is not None:
-        u.is_admin = data.is_admin
-    if data.is_email_verified is not None:
-        u.is_email_verified = data.is_email_verified
-    if data.new_password:
-        if len(data.new_password) < 6:
-            raise HTTPException(422, "Пароль должен содержать минимум 6 символов")
-        u.password_hash = get_password_hash(data.new_password)
-    db.commit()
-    db.refresh(u)
-    return AdminUserResponse(
-        id=u.id,
-        username=u.username,
-        email=u.email,
-        telegram=u.telegram,
-        is_admin=bool(u.is_admin),
-        is_email_verified=bool(u.is_email_verified),
-        created_at=u.created_at,
-        accounts_count=db.query(FacebookAccount).filter(FacebookAccount.user_id == u.id).count(),
-        proxies_count=db.query(Proxy).filter(Proxy.user_id == u.id).count(),
-        templates_count=db.query(Template).filter(Template.user_id == u.id).count(),
-        tasks_count=db.query(Task).filter(Task.user_id == u.id).count(),
-        subscription=u.subscription or "free",
-        subscription_expires_at=u.subscription_expires_at,
+          {/* ── TASKS ── */}
+          {tab === 'tasks' && (
+            <div className="divide-y divide-[#1c2333]/40">
+              {data.tasks.length === 0 ? (
+                <p className="px-5 py-6 text-center text-[#3d4f6a] text-xs">Нет задач</p>
+              ) : data.tasks.map((t) => (
+                <div key={t.id}>
+                  <div className="flex items-start gap-3 px-5 py-3 hover:bg-white/[0.01] transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                        <span className="text-[10px] font-mono text-[#3d4f6a]">#{t.id}</span>
+                        <span className="text-xs font-semibold text-white">{t.template_name || '—'}</span>
+                        <span className={statusBadge(t.status)}>{t.status}</span>
+                        <span className="text-[10px] text-[#4b6080] ml-auto">{t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</span>
+                      </div>
+                      {(t.progress_total > 0) && (
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="h-1 flex-1 bg-[#1c2333] rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 rounded-full"
+                              style={{ width: `${Math.round((t.progress_current / t.progress_total) * 100)}%` }} />
+                          </div>
+                          <span className="text-[9px] text-[#4b6080] font-mono">{t.progress_current}/{t.progress_total}</span>
+                        </div>
+                      )}
+                      {t.post_urls && t.post_urls.length > 0 && (
+                        <div className="flex flex-col gap-0.5">
+                          {t.post_urls.map((url, ui) => (
+                            <a key={ui} href={url} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] text-cyan-500/70 hover:text-cyan-400 transition-colors truncate">
+                              <ExternalLink size={9} className="flex-shrink-0" />
+                              <span className="truncate">{url}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {t.error_message && <p className="text-[10px] text-red-400 mt-1">{t.error_message}</p>}
+                    </div>
+                    <button
+                      onClick={() => setOpenLogsFor(openLogsFor === t.id ? null : t.id)}
+                      className="flex items-center gap-1 text-[9px] text-[#4b6080] hover:text-cyan-400 flex-shrink-0 transition-colors mt-0.5"
+                    >
+                      <ScrollText size={11} />
+                      Логи
+                      {openLogsFor === t.id ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                    </button>
+                  </div>
+                  {openLogsFor === t.id && (
+                    <div className="px-5 pb-3">
+                      <TaskLogsPanel taskId={t.id} onClose={() => setOpenLogsFor(null)} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Admin support panel ───────────────────────────────────────────────────────
+
+function formatDateSupport(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function SupportTicketThread({ ticketId, onClose }) {
+  const [ticket, setTicket] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+  const [err, setErr] = useState('')
+  const bottomRef = useRef(null)
+
+  const load = async () => {
+    try {
+      const t = await adminGetSupportTicket(ticketId)
+      setTicket(t)
+    } catch { setErr('Ошибка загрузки') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [ticketId])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [ticket?.messages?.length])
+
+  const handleReply = async (e) => {
+    e.preventDefault()
+    if (!reply.trim()) return
+    setSending(true); setErr('')
+    try {
+      await adminReplySupportTicket(ticketId, reply.trim())
+      setReply('')
+      await load()
+    } catch (ex) { setErr(ex.message || 'Ошибка') }
+    finally { setSending(false) }
+  }
+
+  const handleStatus = async (status) => {
+    try { await adminUpdateSupportTicket(ticketId, status); await load() }
+    catch (ex) { setErr(ex.message || 'Ошибка') }
+  }
+
+  if (loading) return <p className="p-4 text-xs text-[#4b6080]">Загрузка...</p>
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 mb-4">
+        <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-300 bg-[#151b27] border border-[#1c2333] transition-colors">← Назад</button>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white truncate">{ticket?.subject}</p>
+          <p className="text-[10px] text-[#4b6080] mt-0.5">{ticket?.user_email || ticket?.user_username} · {formatDateSupport(ticket?.created_at)}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {ticket?.status === 'open'
+            ? <button onClick={() => handleStatus('closed')} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[rgba(239,68,68,0.10)] border border-red-500/40 text-red-400 hover:bg-[rgba(239,68,68,0.18)] transition-colors"><Lock size={10} className="inline mr-1" />Закрыть</button>
+            : <button onClick={() => handleStatus('open')} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[rgba(6,182,212,0.10)] border border-cyan-500/40 text-cyan-400 hover:bg-[rgba(6,182,212,0.18)] transition-colors">Открыть</button>
+          }
+          <span className={ticket?.status === 'open'
+            ? 'text-[10px] px-2 py-0.5 rounded-full bg-cyan-400/15 border border-cyan-500/40 text-cyan-400 font-bold'
+            : 'text-[10px] px-2 py-0.5 rounded-full bg-gray-500/20 border border-gray-600/40 text-gray-400 font-bold'
+          }>{ticket?.status === 'open' ? 'ОТКРЫТ' : 'ЗАКРЫТ'}</span>
+        </div>
+      </div>
+
+      {err && <p className="mb-2 text-xs text-red-400">{err}</p>}
+
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1 mb-4" style={{ maxHeight: '380px' }}>
+        {ticket?.messages?.map(msg => (
+          <div key={msg.id} className={`flex ${msg.sender_type === 'user' ? 'justify-start' : 'justify-end'}`}>
+            <div className={`max-w-[75%] rounded-xl px-4 py-2.5 text-sm ${
+              msg.sender_type === 'user'
+                ? 'bg-[#151b27] border border-[#1c2333] text-white'
+                : 'bg-purple-500/15 border border-purple-500/30 text-white'
+            }`}>
+              <div className={`text-[10px] font-bold mb-1 uppercase ${msg.sender_type === 'user' ? 'text-cyan-400' : 'text-purple-400'}`}>
+                {msg.sender_type === 'user' ? (ticket?.user_email || 'Пользователь') : 'Администратор'}
+              </div>
+              <p className="whitespace-pre-wrap leading-relaxed text-xs">{msg.text}</p>
+              <div className="text-[9px] text-[#3d4f6a] mt-1 text-right">{formatDateSupport(msg.created_at)}</div>
+            </div>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      <form onSubmit={handleReply} className="flex gap-2">
+        <textarea
+          rows={2}
+          className="flex-1 bg-[#080c12] border border-[#1c2333] rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/60 resize-none"
+          placeholder="Ответить пользователю..."
+          value={reply}
+          onChange={e => setReply(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(e) } }}
+        />
+        <button
+          type="submit"
+          disabled={sending || !reply.trim()}
+          className="self-end px-3 py-2 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-400 hover:bg-purple-500/30 transition-colors disabled:opacity-40"
+        >
+          <Send size={15} />
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function SupportAdminPanel() {
+  const [tickets, setTickets] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selectedId, setSelectedId] = useState(null)
+  const [filter, setFilter] = useState('all')
+
+  const load = () => {
+    setLoading(true)
+    adminGetSupportTickets()
+      .then(setTickets)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const displayed = tickets.filter(t => filter === 'all' || t.status === filter)
+
+  if (selectedId) {
+    return (
+      <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-5" style={{ boxShadow: '0 0 32px rgba(6,182,212,0.04)' }}>
+        <SupportTicketThread ticketId={selectedId} onClose={() => { setSelectedId(null); load() }} />
+      </div>
     )
+  }
 
+  return (
+    <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl overflow-hidden" style={{ boxShadow: '0 0 32px rgba(6,182,212,0.04)' }}>
+      <div className="px-5 py-4 border-b border-[#1c2333] flex items-center gap-3">
+        <MessageCircle size={15} className="text-purple-400" />
+        <span className="text-white font-semibold text-sm">Обращения</span>
+        <span className="ml-auto px-2.5 py-0.5 rounded-full bg-[#151b27] border border-[#1c2333] text-gray-500 text-[10px] font-semibold">{tickets.length}</span>
+        <div className="flex gap-1">
+          {[['all', 'Все'], ['open', 'Открытые'], ['closed', 'Закрытые']].map(([v, l]) => (
+            <button key={v} onClick={() => setFilter(v)}
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${filter === v ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400' : 'bg-[#151b27] border-[#1c2333] text-[#4b6080] hover:text-gray-300'}`}
+            >{l}</button>
+          ))}
+        </div>
+      </div>
+      {loading ? (
+        <p className="p-6 text-[#4b6080] text-sm">Загрузка...</p>
+      ) : displayed.length === 0 ? (
+        <p className="p-6 text-[#3d4f6a] text-sm">Обращений нет</p>
+      ) : (
+        <div className="divide-y divide-[#1c2333]/60">
+          {displayed.map(t => (
+            <div key={t.id} className="flex items-center hover:bg-[#0f1520] transition-colors group">
+              <button
+                onClick={() => setSelectedId(t.id)}
+                className="flex-1 text-left px-5 py-3.5"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] text-[#4b6080] font-mono">#{t.id}</span>
+                      <span className="text-sm font-medium text-white group-hover:text-cyan-300 transition-colors truncate">{t.subject}</span>
+                    </div>
+                    <p className="text-[10px] text-[#4b6080]">{t.user_email || t.user_username} · {formatDateSupport(t.updated_at)} · {t.message_count} сообщ.</p>
+                  </div>
+                  <span className={t.status === 'open'
+                    ? 'text-[10px] px-2 py-0.5 rounded-full bg-cyan-400/15 border border-cyan-500/40 text-cyan-400 font-bold flex-shrink-0'
+                    : 'text-[10px] px-2 py-0.5 rounded-full bg-gray-500/20 border border-gray-600/40 text-gray-400 font-bold flex-shrink-0'
+                  }>{t.status === 'open' ? 'ОТКРЫТ' : 'ЗАКРЫТ'}</span>
+                </div>
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Удалить обращение "${t.subject}"?`)) return
+                  try { await adminDeleteSupportTicket(t.id); load() } catch {}
+                }}
+                className="px-4 py-3.5 text-gray-600 hover:text-red-400 transition-colors flex-shrink-0"
+                title="Удалить"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
-@router.post("/users", response_model=AdminUserResponse)
-def create_user(
-    data: AdminCreateUser,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    if db.query(User).filter(User.email == data.email).first():
-        raise HTTPException(400, "Email уже используется")
-    username = data.username or data.email.split('@')[0]
-    base = username
-    counter = 1
-    while db.query(User).filter(User.username == username).first():
-        username = f"{base}{counter}"
-        counter += 1
-    u = User(
-        username=username,
-        email=data.email,
-        password_hash=get_password_hash(data.password),
-        is_email_verified=data.is_email_verified,
-    )
-    db.add(u)
-    db.commit()
-    db.refresh(u)
-    return AdminUserResponse(
-        id=u.id, username=u.username, email=u.email, telegram=u.telegram,
-        is_admin=False, is_email_verified=bool(u.is_email_verified),
-        created_at=u.created_at,
-        accounts_count=0, proxies_count=0, templates_count=0, tasks_count=0,
-        subscription="free", subscription_expires_at=None,
-    )
+export default function Admin() {
+  const [list, setList] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [passwordModal, setPasswordModal] = useState(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [actionLoading, setActionLoading] = useState(null)
+  const [expandedUser, setExpandedUser] = useState(null)
+  const [createModal, setCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState({ email: '', password: '', username: '', is_email_verified: false })
+  const [createLoading, setCreateLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState('users')
 
+  const load = () => {
+    setLoading(true)
+    adminGetUsers()
+      .then(setList)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }
 
-@router.delete("/users/{user_id}")
-def delete_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin),
-):
-    if user_id == current_admin.id:
-        raise HTTPException(400, "Нельзя удалить самого себя")
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(404, "Пользователь не найден")
-    db.delete(u)
-    db.commit()
-    return {"ok": True}
+  useEffect(load, [])
 
+  const handleDelete = async (user) => {
+    if (!confirm(`Удалить пользователя ${user.email || user.username}? Это действие необратимо.`)) return
+    setActionLoading(user.id)
+    setError(''); setSuccess('')
+    try {
+      await adminDeleteUser(user.id)
+      setSuccess('Пользователь удалён')
+      load()
+    } catch (e) { setError(e.message) }
+    finally { setActionLoading(null) }
+  }
 
-@router.get("/users/{user_id}/tasks")
-def get_user_tasks(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    tasks = (
-        db.query(Task)
-        .filter(Task.user_id == user_id)
-        .order_by(Task.created_at.desc())
-        .limit(50)
-        .all()
-    )
-    result = []
-    for t in tasks:
-        result.append({
-            "id": t.id,
-            "status": t.status,
-            "post_url": t.post_url,
-            "template_name": t.template.name if t.template else None,
-            "progress_current": t.progress_current,
-            "progress_total": t.progress_total,
-            "error_message": t.error_message,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "started_at": t.started_at.isoformat() if t.started_at else None,
-            "finished_at": t.finished_at.isoformat() if t.finished_at else None,
-        })
-    return result
+  const handleToggleAdmin = async (user) => {
+    setActionLoading(user.id)
+    setError(''); setSuccess('')
+    try {
+      await adminUpdateUser(user.id, { is_admin: !user.is_admin })
+      setSuccess(user.is_admin ? 'Права администратора сняты' : 'Права администратора выданы')
+      load()
+    } catch (e) { setError(e.message) }
+    finally { setActionLoading(null) }
+  }
 
+  const handleVerifyEmail = async (user) => {
+    setActionLoading(user.id)
+    setError(''); setSuccess('')
+    try {
+      await adminUpdateUser(user.id, { is_email_verified: !user.is_email_verified })
+      setSuccess(user.is_email_verified ? 'Email помечен как неподтверждённый' : `Email для ${user.email || user.username} подтверждён`)
+      load()
+    } catch (e) { setError(e.message) }
+    finally { setActionLoading(null) }
+  }
 
-@router.get("/users/{user_id}/detail")
-def get_user_detail(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    """Return accounts, proxies, templates (with actions+accounts) and tasks for a user."""
-    from .models import FacebookAccount, Proxy, Template, TemplateAction, TemplateAccount, Task
+  const handleToggleSubscription = async (user) => {
+    setActionLoading(user.id)
+    setError(''); setSuccess('')
+    const newSub = (user.subscription || 'free') === 'pro' ? 'free' : 'pro'
+    try {
+      await adminSetUserSubscription(user.id, newSub)
+      setSuccess(newSub === 'pro' ? `Подписка Pro выдана для ${user.email || user.username}` : `Подписка Pro снята`)
+      load()
+    } catch (e) { setError(e.message) }
+    finally { setActionLoading(null) }
+  }
 
-    # Accounts
-    accounts = db.query(FacebookAccount).filter(FacebookAccount.user_id == user_id).all()
-    accounts_data = [
-        {
-            "id": a.id,
-            "name": a.name,
-            "is_valid": a.is_valid,
-            "last_check": a.last_check.isoformat() if a.last_check else None,
-            "proxy_id": a.proxy_id,
-        }
-        for a in accounts
-    ]
+  const handleSetPassword = async () => {
+    if (!newPassword.trim()) return
+    setActionLoading(passwordModal.userId)
+    setError(''); setSuccess('')
+    try {
+      await adminUpdateUser(passwordModal.userId, { new_password: newPassword })
+      setSuccess(`Пароль для ${passwordModal.username} изменён`)
+      setPasswordModal(null)
+      setNewPassword('')
+    } catch (e) { setError(e.message) }
+    finally { setActionLoading(null) }
+  }
 
-    # Proxies
-    proxies = db.query(Proxy).filter(Proxy.user_id == user_id).all()
-    proxies_data = [
-        {
-            "id": p.id,
-            "name": p.name,
-            "ip": p.ip,
-            "port": p.port,
-            "login": p.login,
-            "rotate_url": p.rotate_url,
-            "rotate_delay": p.rotate_delay,
-        }
-        for p in proxies
-    ]
-    proxy_map = {p.id: p.name for p in proxies}
+  const handleCreateUser = async () => {
+    if (!createForm.email.trim() || !createForm.password.trim()) return
+    setCreateLoading(true)
+    setError(''); setSuccess('')
+    try {
+      await adminCreateUser({
+        email: createForm.email.trim(),
+        password: createForm.password,
+        username: createForm.username.trim() || undefined,
+        is_email_verified: createForm.is_email_verified,
+      })
+      setSuccess(`Пользователь ${createForm.email} создан`)
+      setCreateModal(false)
+      setCreateForm({ email: '', password: '', username: '', is_email_verified: false })
+      load()
+    } catch (e) { setError(e.message) }
+    finally { setCreateLoading(false) }
+  }
 
-    # Enrich accounts with proxy name
-    for a_dict, a_obj in zip(accounts_data, accounts):
-        a_dict["proxy_name"] = proxy_map.get(a_obj.proxy_id, "—") if a_obj.proxy_id else "—"
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Администрирование</h1>
+          <p className="text-base font-semibold text-gray-400 mt-1">Управление пользователями системы</p>
+        </div>
+        {activeTab === 'users' && (
+          <button
+            onClick={() => { setCreateModal(true); setError('') }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-cyan-600 to-teal-500 text-white text-xs font-black tracking-widest uppercase hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all"
+          >
+            <UserPlus size={14} /> Добавить
+          </button>
+        )}
+      </div>
 
-    # Templates with full detail
-    templates = db.query(Template).filter(Template.user_id == user_id).all()
-    templates_data = []
-    for t in templates:
-        actions = [
-            {
-                "order": act.action_order,
-                "action_type": act.action_type,
-                "reaction_type": act.reaction_type,
-                "text": act.text,
-                "account_name": act.account.name if act.account else None,
-                "delay": act.delay,
-            }
-            for act in sorted(t.actions, key=lambda x: x.action_order)
-        ]
-        linked_accounts = [
-            {"id": ta.account.id, "name": ta.account.name}
-            for ta in t.accounts
-            if ta.account
-        ]
-        templates_data.append({
-            "id": t.id,
-            "name": t.name,
-            "reaction_type": t.reaction_type,
-            "comment_text": t.comment_text,
-            "reply_text": t.reply_text,
-            "delay_min": t.delay_min,
-            "delay_max": t.delay_max,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "actions": actions,
-            "accounts": linked_accounts,
-        })
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-[#1c2333] pb-0">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold tracking-widest uppercase border-b-2 transition-colors ${activeTab === 'users' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-[#4b6080] hover:text-gray-300'}`}
+        >
+          <Users size={13} /> Пользователи
+        </button>
+        <button
+          onClick={() => setActiveTab('support')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold tracking-widest uppercase border-b-2 transition-colors ${activeTab === 'support' ? 'border-purple-400 text-purple-400' : 'border-transparent text-[#4b6080] hover:text-gray-300'}`}
+        >
+          <MessageCircle size={13} /> Обращения
+        </button>
+      </div>
 
-    # Tasks with post_urls
-    tasks = (
-        db.query(Task)
-        .filter(Task.user_id == user_id)
-        .order_by(Task.created_at.desc())
-        .limit(100)
-        .all()
-    )
-    tasks_data = [
-        {
-            "id": t.id,
-            "status": t.status,
-            "template_name": t.template.name if t.template else None,
-            "post_urls": t.post_urls or ([t.post_url] if t.post_url else []),
-            "progress_current": t.progress_current,
-            "progress_total": t.progress_total,
-            "error_message": t.error_message,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "finished_at": t.finished_at.isoformat() if t.finished_at else None,
-        }
-        for t in tasks
-    ]
+      {error && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-[rgba(239,68,68,0.08)] border border-red-500/30 text-red-400 text-sm">
+          <AlertCircle size={15} /> {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-[rgba(6,182,212,0.08)] border border-cyan-500/30 text-cyan-400 text-sm">
+          <CheckCircle size={15} /> {success}
+        </div>
+      )}
 
-    return {
-        "accounts": accounts_data,
-        "proxies": proxies_data,
-        "templates": templates_data,
-        "tasks": tasks_data,
-    }
+      {/* Create user modal */}
+      {createModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-white font-bold mb-4 flex items-center gap-2"><UserPlus size={16} className="text-cyan-400" /> Новый пользователь</h3>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-[#4b6080] mb-1 block">Email *</label>
+                <input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+                  placeholder="user@example.com"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-[#4b6080] mb-1 block">Пароль *</label>
+                <input
+                  type="password"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm(f => ({ ...f, password: e.target.value }))}
+                  className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+                  placeholder="Минимум 6 символов"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-[#4b6080] mb-1 block">Имя пользователя (необязательно)</label>
+                <input
+                  type="text"
+                  value={createForm.username}
+                  onChange={(e) => setCreateForm(f => ({ ...f, username: e.target.value }))}
+                  className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+                  placeholder="Автоматически из email"
+                />
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <div
+                  onClick={() => setCreateForm(f => ({ ...f, is_email_verified: !f.is_email_verified }))}
+                  className={`w-10 h-5 rounded-full transition-colors flex items-center px-0.5 ${createForm.is_email_verified ? 'bg-cyan-500' : 'bg-[#1c2333]'}`}
+                >
+                  <span className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${createForm.is_email_verified ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
+                <span className="text-sm text-gray-400">Email подтверждён</span>
+              </label>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={handleCreateUser}
+                disabled={createLoading || !createForm.email || !createForm.password}
+                className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-cyan-600 to-teal-500 text-white text-xs font-black tracking-widest uppercase hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all disabled:opacity-40"
+              >
+                {createLoading ? 'Создание...' : 'Создать'}
+              </button>
+              <button
+                onClick={() => { setCreateModal(false); setCreateForm({ email: '', password: '', username: '', is_email_verified: false }) }}
+                className="px-4 py-2.5 rounded-full border border-[#1c2333] text-gray-500 text-xs font-semibold hover:border-red-500/40 hover:text-red-400 transition-all"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* Password modal */}
+      {passwordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-white font-bold mb-1">Новый пароль</h3>
+            <p className="text-xs text-gray-500 mb-4">Пользователь: <span className="text-cyan-400">{passwordModal.username}</span></p>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
+              className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500 mb-4"
+              placeholder="Минимум 6 символов"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleSetPassword}
+                disabled={actionLoading === passwordModal.userId}
+                className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-cyan-600 to-teal-500 text-white text-xs font-black tracking-widest uppercase hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all disabled:opacity-40"
+              >
+                Сохранить
+              </button>
+              <button
+                onClick={() => { setPasswordModal(null); setNewPassword('') }}
+                className="px-4 py-2.5 rounded-full border border-[#1c2333] text-gray-500 text-xs font-semibold hover:border-red-500/40 hover:text-red-400 transition-all"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-def get_task_logs(
-    task_id: int,
-    limit: int = Query(200, le=500),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    logs = (
-        db.query(LogEntry)
-        .filter(LogEntry.task_id == task_id)
-        .order_by(LogEntry.created_at.desc())
-        .limit(limit)
-        .all()
-    )
-    return [
-        {
-            "id": l.id,
-            "account_name": l.account_name,
-            "action": l.action,
-            "message": l.message,
-            "success": l.success,
-            "created_at": l.created_at.isoformat() if l.created_at else None,
-        }
-        for l in logs
-    ]
+      {activeTab === 'support' ? (
+        <SupportAdminPanel />
+      ) : (
+      <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl overflow-hidden" style={{ boxShadow: '0 0 32px rgba(6,182,212,0.04)' }}>
+        <div className="px-5 py-4 border-b border-[#1c2333] flex items-center gap-2">
+          <Users size={15} className="text-cyan-400" />
+          <span className="text-white font-semibold text-sm">Пользователи</span>
+          <span className="ml-auto px-2.5 py-0.5 rounded-full bg-[#151b27] border border-[#1c2333] text-gray-500 text-[10px] font-semibold">{list.length}</span>
+        </div>
 
-
-# ── Support ticket admin endpoints ───────────────────────────────────────────
-
-class AdminReplyRequest(BaseModel):
-    text: str
-
-
-class AdminTicketStatusUpdate(BaseModel):
-    status: str  # "open" or "closed"
-
-
-def _admin_ticket_dict(t: SupportTicket, messages: bool = False) -> dict:
-    d = {
-        "id": t.id,
-        "user_id": t.user_id,
-        "user_email": t.user.email if t.user else None,
-        "user_username": t.user.username if t.user else None,
-        "subject": t.subject,
-        "status": t.status,
-        "message_count": len(t.messages),
-        "created_at": t.created_at.isoformat() if t.created_at else None,
-        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-    }
-    if messages:
-        d["messages"] = [
-            {
-                "id": m.id,
-                "sender_type": m.sender_type,
-                "text": m.text,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-            }
-            for m in t.messages
-        ]
-    return d
-
-
-@router.get("/support/tickets")
-def admin_list_tickets(
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    tickets = (
-        db.query(SupportTicket)
-        .order_by(SupportTicket.updated_at.desc())
-        .all()
-    )
-    return [_admin_ticket_dict(t) for t in tickets]
-
-
-@router.get("/support/tickets/{ticket_id}")
-def admin_get_ticket(
-    ticket_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    t = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
-    if not t:
-        raise HTTPException(404, "Обращение не найдено")
-    return _admin_ticket_dict(t, messages=True)
-
-
-@router.post("/support/tickets/{ticket_id}/reply")
-def admin_reply_ticket(
-    ticket_id: int,
-    data: AdminReplyRequest,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    t = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
-    if not t:
-        raise HTTPException(404, "Обращение не найдено")
-    if not data.text.strip():
-        raise HTTPException(422, "Ответ не может быть пустым")
-
-    msg = SupportMessage(ticket_id=t.id, sender_type="admin", text=data.text.strip())
-    db.add(msg)
-    if t.status == "closed":
-        t.status = "open"
-    t.updated_at = datetime.utcnow()
-    db.commit()
-    return {"ok": True}
-
-
-@router.patch("/support/tickets/{ticket_id}")
-def admin_update_ticket(
-    ticket_id: int,
-    data: AdminTicketStatusUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    if data.status not in ("open", "closed"):
-        raise HTTPException(422, "Статус должен быть open или closed")
-    t = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
-    if not t:
-        raise HTTPException(404, "Обращение не найдено")
-    t.status = data.status
-    t.updated_at = datetime.utcnow()
-    db.commit()
-    return {"ok": True}
-
-
-@router.delete("/support/tickets/{ticket_id}")
-def admin_delete_ticket(
-    ticket_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    t = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
-    if not t:
-        raise HTTPException(404, "Обращение не найдено")
-    db.delete(t)
-    db.commit()
-    return {"ok": True}
-
-
-# ── Subscription management ───────────────────────────────────────────────────
-
-class AdminSubscriptionUpdate(BaseModel):
-    subscription: str  # "free" or "pro"
-    subscription_expires_at: Optional[datetime] = None
-
-
-@router.patch("/users/{user_id}/subscription")
-def set_user_subscription(
-    user_id: int,
-    data: AdminSubscriptionUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
-):
-    if data.subscription not in ("free", "pro"):
-        raise HTTPException(422, "Подписка должна быть 'free' или 'pro'")
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(404, "Пользователь не найден")
-    u.subscription = data.subscription
-    if data.subscription == "pro":
-        if data.subscription_expires_at:
-            u.subscription_expires_at = data.subscription_expires_at
-        else:
-            u.subscription_expires_at = datetime.utcnow() + timedelta(days=30)
-    else:
-        u.subscription_expires_at = None
-    db.commit()
-    db.refresh(u)
-    return {
-        "id": u.id,
-        "subscription": u.subscription,
-        "subscription_expires_at": u.subscription_expires_at,
-    }
-
+        {loading ? (
+          <p className="p-6 text-[#4b6080] text-sm">Загрузка...</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-[#1c2333]">
+                  <th className="px-3 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a] w-10" />
+                  {['Пользователь', 'Email'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a]">{h}</th>
+                  ))}
+                  {['Аккаунты', 'Прокси', 'Шаблоны', 'Задачи'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a] text-center">{h}</th>
+                  ))}
+                  {['Статус', 'Действия'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((u) => (
+                  <Fragment key={u.id}>
+                    <tr className={`border-b border-[#1c2333]/60 transition-colors ${expandedUser === u.id ? 'bg-[#0f1520]' : 'hover:bg-[#0f1520]'}`}>
+                      {/* Expand toggle */}
+                      <td className="pl-3 py-3">
+                        <button
+                          onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
+                          title="Задачи пользователя"
+                          className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${expandedUser === u.id ? 'bg-[rgba(6,182,212,0.15)] border-cyan-500/50 text-cyan-400' : 'bg-[#151b27] border-[#1c2333] text-[#4b6080] hover:text-cyan-400 hover:border-cyan-500/40'}`}
+                        >
+                          {expandedUser === u.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </button>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center border ${u.is_admin ? 'bg-[rgba(168,85,247,0.15)] border-purple-500/40' : 'bg-[#1c2333] border-[#2a3a50]'}`}>
+                            <Users size={12} className={u.is_admin ? 'text-purple-400' : 'text-cyan-400/70'} />
+                          </div>
+                          <span className="text-white font-medium">{u.username}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-[#4b6080] text-xs">{u.email || '—'}</td>
+                      <td className="px-5 py-3 text-center">
+                        <span className="text-cyan-400 font-bold text-xs">{u.accounts_count}</span>
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        <span className="text-cyan-400 font-bold text-xs">{u.proxies_count}</span>
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        <span className="text-purple-400 font-bold text-xs">{u.templates_count}</span>
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        <button
+                          onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
+                          className={`font-bold text-xs transition-colors ${expandedUser === u.id ? 'text-cyan-400' : 'text-pink-400 hover:text-cyan-400'}`}
+                          title="Показать задачи"
+                        >
+                          {u.tasks_count}
+                        </button>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex flex-col gap-1">
+                          {u.is_admin && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[rgba(168,85,247,0.12)] text-purple-400 border border-purple-500/40">
+                              <ShieldCheck size={10} /> Админ
+                            </span>
+                          )}
+                          {(u.subscription || 'free') === 'pro' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/40">
+                              <Crown size={10} /> Pro
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleVerifyEmail(u)}
+                            disabled={actionLoading === u.id}
+                            title={u.is_email_verified ? 'Снять подтверждение email' : 'Подтвердить email'}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all disabled:opacity-40 ${u.is_email_verified ? 'bg-[rgba(6,182,212,0.10)] text-cyan-400 border-cyan-500/30 hover:bg-[rgba(239,68,68,0.08)] hover:text-red-400 hover:border-red-500/30' : 'bg-[rgba(239,68,68,0.10)] text-red-400 border-red-500/30 hover:bg-[rgba(6,182,212,0.08)] hover:text-cyan-400 hover:border-cyan-500/30'}`}
+                          >
+                            {u.is_email_verified ? <><MailCheck size={10} /> Email ✓</> : <><Mail size={10} /> Email ✗</>}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => { setPasswordModal({ userId: u.id, username: u.email || u.username }); setNewPassword('') }}
+                            disabled={actionLoading === u.id}
+                            title="Сменить пароль"
+                            className="w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center text-gray-600 hover:text-cyan-400 hover:border-cyan-500/40 transition-all disabled:opacity-40"
+                          >
+                            <KeyRound size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleToggleSubscription(u)}
+                            disabled={actionLoading === u.id}
+                            title={(u.subscription || 'free') === 'pro' ? 'Снять Pro подписку' : 'Выдать Pro подписку'}
+                            className={`w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center transition-all disabled:opacity-40 ${(u.subscription || 'free') === 'pro' ? 'text-yellow-400 hover:text-red-400 hover:border-red-500/40' : 'text-gray-600 hover:text-yellow-400 hover:border-yellow-500/40'}`}
+                          >
+                            <Crown size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleToggleAdmin(u)}
+                            disabled={actionLoading === u.id}
+                            title={u.is_admin ? 'Снять права администратора' : 'Выдать права администратора'}
+                            className={`w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center transition-all disabled:opacity-40 ${u.is_admin ? 'text-purple-400 hover:text-red-400 hover:border-red-500/40' : 'text-gray-600 hover:text-purple-400 hover:border-purple-500/40'}`}
+                          >
+                            {u.is_admin ? <ShieldOff size={13} /> : <ShieldCheck size={13} />}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(u)}
+                            disabled={actionLoading === u.id}
+                            title="Удалить пользователя"
+                            className="w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center text-gray-600 hover:text-red-400 hover:border-red-500/40 transition-all disabled:opacity-40"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedUser === u.id && (
+                      <UserDetailPanel userId={u.id} onClose={() => setExpandedUser(null)} />
+                    )}
+                  </Fragment>
+                ))}
+                {list.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-5 py-10 text-center text-[#3d4f6a] text-sm">Нет пользователей</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      )}
+    </div>
+  )
+}

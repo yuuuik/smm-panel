@@ -82,6 +82,14 @@ if os.path.isdir(UPLOAD_DIR):
     app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
+@app.api_route(
+    "/api/{full_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def api_not_found(full_path: str):
+    raise HTTPException(status_code=404, detail=f"API endpoint not found: /api/{full_path}")
+
+
 @app.post("/api/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, data.email, data.password)

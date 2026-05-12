@@ -16,8 +16,7 @@ router = APIRouter(prefix="/actions", tags=["actions"])
 
 _tasks_threads: dict = {}
 
-FREE_TASK_LIMIT = 2
-FREE_TASK_WINDOW_HOURS = 24
+FREE_TASK_LIMIT = 5
 
 
 def _is_pro(user: User) -> bool:
@@ -70,19 +69,15 @@ def create_task(
     if not tpl:
         raise HTTPException(404, "Template not found")
 
-    # Enforce free-plan task limit
+    # Enforce free-plan task limit (5 tasks total, no reset)
     if not _is_pro(current_user):
-        cutoff = datetime.utcnow() - timedelta(hours=FREE_TASK_WINDOW_HOURS)
-        recent_tasks = db.query(Task).filter(
+        total_tasks = db.query(Task).filter(
             Task.user_id == current_user.id,
-            Task.created_at >= cutoff,
-        ).order_by(Task.created_at.asc()).all()
-        if len(recent_tasks) >= FREE_TASK_LIMIT:
-            oldest = recent_tasks[0]
-            reset_at = (oldest.created_at + timedelta(hours=FREE_TASK_WINDOW_HOURS)).isoformat()
+        ).count()
+        if total_tasks >= FREE_TASK_LIMIT:
             raise HTTPException(429, detail={
-                "message": f"Лимит задач исчерпан. Тариф Free позволяет {FREE_TASK_LIMIT} задачи за {FREE_TASK_WINDOW_HOURS} часов. Перейдите на Pro.",
-                "reset_at": reset_at,
+                "message": f"Лимит задач исчерпан. Тариф Free позволяет {FREE_TASK_LIMIT} задач на аккаунт. Перейдите на Pro для безлимитного доступа.",
+                "reset_at": None,
             })
 
     action_count = len(tpl.actions)

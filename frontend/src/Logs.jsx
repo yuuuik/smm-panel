@@ -163,7 +163,7 @@ export default function Logs() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-[#1c2333]">
-                {['Временная метка', 'Задача / Аккаунт', 'Тип действия', 'Статус', 'Сообщение'].map((h) => (
+                {['Временная метка', 'Задача / Аккаунт', 'Тип действия', 'Статус'].map((h) => (
                   <th
                     key={h}
                     className="px-5 py-3.5 text-left text-[9px] font-bold text-cyan-600/80 uppercase tracking-[0.2em]"
@@ -176,13 +176,13 @@ export default function Logs() {
             <tbody>
               {loading && list.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-gray-600 text-xs tracking-widest uppercase">
+                  <td colSpan={4} className="px-5 py-12 text-center text-gray-600 text-xs tracking-widest uppercase">
                     Загрузка...
                   </td>
                 </tr>
               ) : pageData.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-gray-700 text-xs tracking-widest uppercase">
+                  <td colSpan={4} className="px-5 py-12 text-center text-gray-700 text-xs tracking-widest uppercase">
                     Логи не найдены
                   </td>
                 </tr>
@@ -229,12 +229,6 @@ export default function Logs() {
                         <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-[0.1em] uppercase ${st.cls}`}>
                           {st.label}
                         </span>
-                      </td>
-                      {/* Payload */}
-                      <td className="px-5 py-3.5 max-w-xs">
-                        <p className="text-[11px] text-gray-500 truncate font-mono">
-                          {l.message || '—'}
-                        </p>
                       </td>
                     </tr>
                   )

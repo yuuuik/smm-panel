@@ -5,7 +5,7 @@ import {
   adminGetSupportTickets, adminGetSupportTicket,
   adminReplySupportTicket, adminUpdateSupportTicket,
   adminDeleteSupportTicket, adminGetUserDetail,
-  adminSetUserSubscription,
+  adminGetUserTasks, adminSetUserSubscription,
 } from './api'
 import {
   ShieldCheck, Trash2, CheckCircle, ChevronDown, ChevronRight,
@@ -100,6 +100,10 @@ function UserDetailPanel({ userId, onClose }) {
   const [expandedId, setExpandedId] = useState(null)
   const [taskPage, setTaskPage] = useState(1)
   const [taskPageSize, setTaskPageSize] = useState(10)
+  const [taskItems, setTaskItems] = useState([])
+  const [taskTotal, setTaskTotal] = useState(0)
+  const [taskLoading, setTaskLoading] = useState(false)
+  const [taskError, setTaskError] = useState('')
 
   const load = () => {
     setLoading(true)
@@ -110,6 +114,7 @@ function UserDetailPanel({ userId, onClose }) {
           throw new Error('Сервер вернул HTML — проверь путь к API')
         }
         setData(res)
+        setTaskTotal(res.tasks_total ?? res.tasks?.length ?? 0)
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
@@ -120,6 +125,19 @@ function UserDetailPanel({ userId, onClose }) {
     setTaskPage(1)
     setExpandedId(null)
   }, [userId, taskPageSize, activeTab])
+
+  useEffect(() => {
+    if (activeTab !== 'tasks') return
+    setTaskLoading(true)
+    setTaskError('')
+    adminGetUserTasks(userId, taskPage, taskPageSize)
+      .then(res => {
+        setTaskItems(res.items || [])
+        setTaskTotal(res.total || 0)
+      })
+      .catch(err => setTaskError(err.message))
+      .finally(() => setTaskLoading(false))
+  }, [activeTab, userId, taskPage, taskPageSize])
 
   if (loading) return (
     <div className="p-10 text-center text-cyan-500 text-xs animate-pulse">
@@ -141,13 +159,12 @@ function UserDetailPanel({ userId, onClose }) {
     { id: 'accounts',  label: 'Аккаунты',  icon: User,       count: data?.accounts?.length  || 0 },
     { id: 'proxies',   label: 'Прокси',    icon: Globe,      count: data?.proxies?.length   || 0 },
     { id: 'templates', label: 'Шаблоны',   icon: Layers,     count: data?.templates?.length || 0 },
-    { id: 'tasks',     label: 'Задачи',    icon: ListChecks, count: data?.tasks?.length     || 0 },
+    { id: 'tasks',     label: 'Задачи',    icon: ListChecks, count: taskTotal || data?.tasks_total || data?.tasks?.length || 0 },
   ]
-  const tasks = data?.tasks || []
-  const taskPageCount = Math.max(1, Math.ceil(tasks.length / taskPageSize))
+  const taskPageCount = Math.max(1, Math.ceil(taskTotal / taskPageSize))
   const safeTaskPage = Math.min(taskPage, taskPageCount)
   const taskStart = (safeTaskPage - 1) * taskPageSize
-  const visibleTasks = tasks.slice(taskStart, taskStart + taskPageSize)
+  const visibleTasks = taskItems
 
   return (
     <div className="bg-[#05070a] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
@@ -178,17 +195,18 @@ function UserDetailPanel({ userId, onClose }) {
         {activeTab === 'accounts' && (
           data?.accounts?.length === 0
             ? <Empty text="Нет аккаунтов" />
-            : <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            : <div className="space-y-2">
                 {data.accounts.map(acc => (
-                  <div key={acc.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex justify-between items-center gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-white truncate">{acc.name}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">
-                        Прокси: <span className="text-gray-400">{acc.proxy_name}</span>
-                      </p>
-                      {acc.last_check && (
-                        <p className="text-[9px] text-gray-600">Проверен: {fmtDate(acc.last_check)}</p>
-                      )}
+                  <div key={acc.id} className="px-3 py-2.5 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <User size={14} className="text-gray-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{acc.name}</p>
+                        <p className="text-[9px] text-gray-600">
+                          Прокси: <span className="text-gray-400">{acc.proxy_name}</span>
+                          {acc.last_check && <> · Проверен: {fmtDate(acc.last_check)}</>}
+                        </p>
+                      </div>
                     </div>
                     <div className="shrink-0">
                       {acc.is_valid === null
@@ -324,13 +342,13 @@ function UserDetailPanel({ userId, onClose }) {
 
         {/* ── ЗАДАЧИ ── */}
         {activeTab === 'tasks' && (
-          tasks.length === 0
+          taskTotal === 0 && !taskLoading
             ? <Empty text="Нет задач" />
             : <div className="space-y-2">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-1 pb-2">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                      Показано {taskStart + 1}-{Math.min(taskStart + taskPageSize, tasks.length)} из {tasks.length}
+                      Показано {taskTotal ? taskStart + 1 : 0}-{Math.min(taskStart + taskPageSize, taskTotal)} из {taskTotal}
                     </p>
                     <p className="text-[9px] text-gray-700 mt-0.5">Страница {safeTaskPage} из {taskPageCount}</p>
                   </div>
@@ -360,80 +378,92 @@ function UserDetailPanel({ userId, onClose }) {
                   </div>
                 </div>
 
-                {visibleTasks.map(task => (
-                  <div key={task.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl">
-                    {/* Шапка задачи */}
-                    <div className="flex justify-between items-start gap-3 mb-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-bold text-white">
+                {taskError && (
+                  <p className="text-[10px] text-red-400 bg-red-500/5 border border-red-500/10 px-3 py-2 rounded-lg">{taskError}</p>
+                )}
+                {taskLoading && (
+                  <div className="py-8 text-center text-[10px] font-bold uppercase tracking-widest text-cyan-500 animate-pulse">
+                    Загрузка задач...
+                  </div>
+                )}
+
+                {!taskLoading && visibleTasks.map(task => {
+                  const rowId = `task-${task.id}`
+                  const expanded = expandedId === rowId
+                  const progress = task.progress_total > 0
+                    ? Math.min(100, (task.progress_current / task.progress_total) * 100)
+                    : 0
+
+                  return (
+                    <div key={task.id} className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden">
+                      <button
+                        onClick={() => setExpandedId(expanded ? null : rowId)}
+                        className="w-full px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {expanded ? <ChevronDown size={13} className="text-gray-500 shrink-0" /> : <ChevronRight size={13} className="text-gray-500 shrink-0" />}
+                          <span className="text-xs font-bold text-white truncate">
                             {task.template_name || <span className="text-gray-600 italic">Шаблон удалён</span>}
                           </span>
                           <span className={statusBadge(task.status)}>{task.status}</span>
                           <span className="text-[9px] text-gray-600">#{task.id}</span>
                         </div>
-                        <p className="text-[9px] text-gray-600 mt-1">
-                          Создана: {fmtDate(task.created_at)}
-                          {task.finished_at && <> · Завершена: {fmtDate(task.finished_at)}</>}
-                        </p>
-                        {task.error_message && (
-                          <p className="text-[10px] text-red-400 mt-1 bg-red-500/5 px-2 py-1 rounded">
-                            ⚠ {task.error_message}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[9px] text-gray-600">Прогресс</p>
-                        <p className="text-sm font-mono font-black text-cyan-400">
-                          {task.progress_current}<span className="text-gray-600">/{task.progress_total}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Ссылки на посты */}
-                    {task.post_urls?.length > 0 && (
-                      <div className="mb-2">
-                        <p className="text-[9px] text-gray-600 uppercase font-bold mb-1.5">
-                          Целевые ссылки ({task.post_urls.length}):
-                        </p>
-                        <div className="space-y-1">
-                          {task.post_urls.map((url, i) => (
-                            <a
-                              key={i}
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1.5 text-[10px] text-cyan-500 hover:text-cyan-300 bg-cyan-500/5 border border-cyan-500/10 px-2 py-1 rounded transition-colors"
-                            >
-                              <ExternalLink size={10} className="shrink-0" />
-                              <span className="truncate">{url}</span>
-                            </a>
-                          ))}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="hidden sm:inline text-[9px] text-gray-600">{task.post_urls?.length || 0} ссыл.</span>
+                          <span className="text-[10px] font-mono font-black text-cyan-400">
+                            {task.progress_current}<span className="text-gray-600">/{task.progress_total}</span>
+                          </span>
                         </div>
-                      </div>
-                    )}
+                      </button>
 
-                    {/* Прогресс бар */}
-                    {task.progress_total > 0 && (
-                      <div className="mb-2 h-1 bg-white/5 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-cyan-500 rounded-full transition-all"
-                          style={{ width: `${Math.min(100, (task.progress_current / task.progress_total) * 100)}%` }}
-                        />
-                      </div>
-                    )}
+                      {task.progress_total > 0 && (
+                        <div className="h-0.5 bg-white/5">
+                          <div className="h-full bg-cyan-500 transition-all" style={{ width: `${progress}%` }} />
+                        </div>
+                      )}
 
-                    {/* Кнопка логов */}
-                    <button
-                      onClick={() => setExpandedId(expandedId === `task-${task.id}` ? null : `task-${task.id}`)}
-                      className="text-[10px] font-bold text-gray-500 hover:text-white flex items-center gap-1.5 transition-colors"
-                    >
-                      <ScrollText size={12} />
-                      {expandedId === `task-${task.id}` ? 'Скрыть логи' : 'Показать логи'}
-                    </button>
-                    {expandedId === `task-${task.id}` && <TaskLogsPanel taskId={task.id} />}
-                  </div>
-                ))}
+                      {expanded && (
+                        <div className="px-4 py-3 border-t border-white/5 bg-black/20 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px]">
+                            <InfoBlock label="Создана" value={fmtDate(task.created_at)} />
+                            <InfoBlock label="Завершена" value={fmtDate(task.finished_at)} />
+                            <InfoBlock label="Прогресс" value={`${task.progress_current}/${task.progress_total}`} />
+                          </div>
+
+                          {task.error_message && (
+                            <p className="text-[10px] text-red-400 bg-red-500/5 px-2 py-1 rounded">
+                              ⚠ {task.error_message}
+                            </p>
+                          )}
+
+                          {task.post_urls?.length > 0 && (
+                            <div>
+                              <p className="text-[9px] text-gray-600 uppercase font-bold mb-1.5">
+                                Целевые ссылки ({task.post_urls.length})
+                              </p>
+                              <div className="space-y-1">
+                                {task.post_urls.map((url, i) => (
+                                  <a
+                                    key={i}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-1.5 text-[10px] text-cyan-500 hover:text-cyan-300 bg-cyan-500/5 border border-cyan-500/10 px-2 py-1 rounded transition-colors"
+                                  >
+                                    <ExternalLink size={10} className="shrink-0" />
+                                    <span className="truncate">{url}</span>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <TaskLogsPanel taskId={task.id} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
 
                 {taskPageCount > 1 && (
                   <div className="flex items-center justify-center gap-1 pt-2">

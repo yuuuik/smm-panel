@@ -16,6 +16,31 @@ function headers(includeAuth = true) {
   return h;
 }
 
+async function readJsonResponse(r, fallbackMessage = 'Ошибка') {
+  const contentType = r.headers.get('content-type') || '';
+  const body = await r.text();
+
+  if (!contentType.includes('application/json')) {
+    if (body.trim().startsWith('<!DOCTYPE') || body.trim().startsWith('<html')) {
+      throw new Error('Сервер вернул HTML вместо JSON. Проверьте, что backend запущен и API-роут доступен.');
+    }
+    throw new Error(body || fallbackMessage);
+  }
+
+  let data;
+  try {
+    data = body ? JSON.parse(body) : null;
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+
+  if (!r.ok) {
+    throw new Error(_extractDetail(data || {}) || fallbackMessage);
+  }
+
+  return data;
+}
+
 export async function login(email, password) {
   const r = await fetch(`${API_BASE}/login`, {
     method: 'POST',
@@ -352,8 +377,7 @@ export async function adminCreateUser(data) {
 }
 export async function adminGetUserDetail(userId) {
   const r = await fetch(`${API_BASE}/admin/users/${userId}/detail`, { headers: headers() });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return readJsonResponse(r, 'Ошибка загрузки детального просмотра');
 }
 
 export async function adminGetUserTasks(userId) {

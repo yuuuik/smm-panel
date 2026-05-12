@@ -29,6 +29,12 @@ export default function Proxies() {
   const [editDelayValue, setEditDelayValue] = useState(0)
   const [savingDelay, setSavingDelay] = useState(null)
 
+  // Bulk import state
+  const [showBulkImport, setShowBulkImport] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  const [bulkParsed, setBulkParsed] = useState(null)
+  const [bulkLoading, setBulkLoading] = useState(false)
+
   const load = () => {
     setLoading(true)
     getProxies()
@@ -87,6 +93,52 @@ export default function Proxies() {
     }
   }
 
+  // Parse bulk proxy text: ip:port:login:pass{name}
+  const parseBulkProxies = (text) => {
+    return text.split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const nameMatch = line.match(/\{([^}]+)\}/)
+        const name = nameMatch ? nameMatch[1].trim() : ''
+        const clean = line.replace(/\{[^}]*\}/, '').trim()
+        const parts = clean.split(':')
+        if (parts.length < 2) return null
+        const ip = parts[0].trim()
+        const port = parts[1].trim()
+        const login = parts[2]?.trim() || ''
+        const password = parts[3]?.trim() || ''
+        if (!ip || !port) return null
+        return { name: name || `${ip}:${port}`, ip, port: Number(port) || 0, login, password, rotate_url: '', rotate_delay: 0 }
+      })
+      .filter(Boolean)
+  }
+
+  const handleBulkParse = () => {
+    const parsed = parseBulkProxies(bulkText)
+    setBulkParsed(parsed)
+  }
+
+  const handleBulkSubmit = async () => {
+    if (!bulkParsed || bulkParsed.length === 0) return
+    setBulkLoading(true)
+    setError('')
+    try {
+      for (const proxy of bulkParsed) {
+        await createProxy(proxy)
+      }
+      setSuccess(`Добавлено ${bulkParsed.length} прокси`)
+      setShowBulkImport(false)
+      setBulkText('')
+      setBulkParsed(null)
+      load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
   const handleCheck = async (id) => {
     setChecking(id)
     setError('')
@@ -108,6 +160,12 @@ export default function Proxies() {
           <h1 className="text-2xl font-bold text-white">Прокси</h1>
           <p className="text-base font-semibold text-gray-400 mt-1">Управление узлами сети</p>
         </div>
+        <button
+          onClick={() => { setShowBulkImport(true); setBulkParsed(null); setBulkText('') }}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-emerald-400 border border-emerald-500/40 rounded-full hover:bg-emerald-500/10 transition-colors"
+        >
+          + Массовый импорт
+        </button>
       </div>
 
       {/* ── Notifications ── */}
@@ -367,6 +425,73 @@ export default function Proxies() {
           </div>
         )}
       </div>
+      {/* ── Bulk Import Modal ── */}
+      {showBulkImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 shadow-2xl" style={{ boxShadow: '0 0 64px rgba(16,185,129,0.1)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-white font-semibold">Массовый импорт прокси</h2>
+              <button onClick={() => setShowBulkImport(false)} className="text-gray-500 hover:text-white transition-colors text-xl leading-none">×</button>
+            </div>
+
+            <p className="text-xs text-gray-500 mb-3">
+              Формат строки: <code className="text-cyan-400 bg-[#080c12] px-1.5 py-0.5 rounded">ip:порт:логин:пароль&#123;название&#125;</code><br />
+              Каждый прокси с новой строки. Название в фигурных скобках необязательно.
+            </p>
+
+            <textarea
+              value={bulkText}
+              onChange={e => { setBulkText(e.target.value); setBulkParsed(null) }}
+              className={`${inputCls} font-mono resize-none text-xs mb-4`}
+              rows={8}
+              placeholder={'192.168.0.1:8000:логин:пароль{серж1}\n192.168.0.1:8001:логин:пароль{серж2}\n192.168.0.1:8002:логин:пароль{серж3}'}
+              spellCheck={false}
+            />
+
+            {bulkParsed && (
+              <div className="bg-[#080c12] border border-[#1c2333] rounded-xl p-3 mb-4">
+                <p className="text-xs text-emerald-400 font-semibold mb-2">Найдено прокси: {bulkParsed.length}</p>
+                <div className="max-h-32 overflow-y-auto flex flex-col gap-1">
+                  {bulkParsed.map((p, i) => (
+                    <div key={i} className="text-xs text-gray-500 flex items-center gap-2">
+                      <span className="w-5 text-right text-gray-700">{i + 1}.</span>
+                      <span className="text-white font-medium">{p.name}</span>
+                      <span className="text-gray-600 font-mono">{p.ip}:{p.port}</span>
+                      {p.login && <span className="text-gray-700">{p.login}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              {!bulkParsed ? (
+                <button
+                  onClick={handleBulkParse}
+                  disabled={!bulkText.trim()}
+                  className="flex-1 py-2.5 rounded-full font-bold text-sm uppercase tracking-widest text-black bg-gradient-to-r from-emerald-400 to-teal-500 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] hover:scale-[1.02] transition-all disabled:opacity-40 disabled:transform-none"
+                >
+                  Распознать
+                </button>
+              ) : (
+                <button
+                  onClick={handleBulkSubmit}
+                  disabled={bulkLoading || bulkParsed.length === 0}
+                  className="flex-1 py-2.5 rounded-full font-bold text-sm uppercase tracking-widest text-black bg-gradient-to-r from-emerald-400 to-teal-500 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] hover:scale-[1.02] transition-all disabled:opacity-40 disabled:transform-none"
+                >
+                  {bulkLoading ? 'Добавление...' : `Добавить ${bulkParsed.length} прокси`}
+                </button>
+              )}
+              <button
+                onClick={() => setShowBulkImport(false)}
+                className="px-5 py-2.5 rounded-full text-sm font-semibold text-gray-500 border border-[#1c2333] hover:text-white hover:border-[#2a3a50] transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

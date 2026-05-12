@@ -145,7 +145,7 @@ def get_user_detail(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    """Return accounts, proxies, templates (with actions) and tasks (with post_urls) for a user."""
+    """Return accounts, proxies, templates (with actions) and task summary for a user."""
     from .models import TemplateAction, TemplateAccount
 
     # Accounts
@@ -213,34 +213,51 @@ def get_user_detail(
             "accounts": linked_accounts,
         })
 
-    # Tasks with post_urls
-    tasks = (
-        db.query(Task)
-        .filter(Task.user_id == user_id)
-        .order_by(Task.created_at.desc())
-        .all()
-    )
-    tasks_data = [
-        {
-            "id": t.id,
-            "status": t.status,
-            "template_name": t.template.name if t.template else None,
-            "post_urls": t.post_urls or ([t.post_url] if t.post_url else []),
-            "progress_current": t.progress_current,
-            "progress_total": t.progress_total,
-            "error_message": t.error_message,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "started_at": t.started_at.isoformat() if t.started_at else None,
-            "finished_at": t.finished_at.isoformat() if t.finished_at else None,
-        }
-        for t in tasks
-    ]
-
     return {
         "accounts": accounts_data,
         "proxies": proxies_data,
         "templates": templates_data,
-        "tasks": tasks_data,
+        "tasks": [],
+        "tasks_total": db.query(Task).filter(Task.user_id == user_id).count(),
+    }
+
+
+def _task_dict(t: Task) -> dict:
+    return {
+        "id": t.id,
+        "status": t.status,
+        "template_name": t.template.name if t.template else None,
+        "post_urls": t.post_urls or ([t.post_url] if t.post_url else []),
+        "progress_current": t.progress_current,
+        "progress_total": t.progress_total,
+        "error_message": t.error_message,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "started_at": t.started_at.isoformat() if t.started_at else None,
+        "finished_at": t.finished_at.isoformat() if t.finished_at else None,
+    }
+
+
+@router.get("/users/{user_id}/tasks")
+def get_user_tasks(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    q = db.query(Task).filter(Task.user_id == user_id)
+    total = q.count()
+    tasks = (
+        q.order_by(Task.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "items": [_task_dict(t) for t in tasks],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
     }
 
 

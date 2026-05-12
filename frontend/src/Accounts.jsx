@@ -41,10 +41,14 @@ export default function Accounts() {
   const [importCodeProxyId, setImportCodeProxyId] = useState('')
   const [importCodeLoading, setImportCodeLoading] = useState(false)
 
+  // Multi-select
+  const [selected, setSelected] = useState(new Set())
+  const [deletingSelected, setDeletingSelected] = useState(false)
+
   const load = () => {
     setLoading(true)
     Promise.all([getAccounts(), getProxies(), getOpenBrowsers().catch(() => ({ open: [] }))])
-      .then(([acc, pr, ob]) => { setList(acc); setProxies(pr); setOpenBrowsers(new Set(ob.open)) })
+      .then(([acc, pr, ob]) => { setList(acc); setProxies(pr); setOpenBrowsers(new Set(ob.open)); setSelected(new Set()) })
       .catch(() => setError('Failed to load'))
       .finally(() => setLoading(false))
   }
@@ -70,6 +74,31 @@ export default function Accounts() {
     if (!confirm('Удалить аккаунт?')) return
     try { await deleteAccount(id); setSuccess('Удалено'); load() }
     catch (err) { setError(err.message) }
+  }
+
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelected(selected.size === list.length ? new Set() : new Set(list.map(a => a.id)))
+  }
+
+  const handleDeleteSelected = async () => {
+    if (!selected.size) return
+    if (!confirm(`Удалить ${selected.size} аккаунтов?`)) return
+    setDeletingSelected(true)
+    setError(''); setSuccess('')
+    try {
+      for (const id of selected) await deleteAccount(id)
+      setSuccess(`Удалено ${selected.size} аккаунтов`)
+      load()
+    } catch (err) { setError(err.message) }
+    finally { setDeletingSelected(false) }
   }
 
   const handleEditOpen = (a) => {
@@ -313,9 +342,21 @@ export default function Accounts() {
                 <Download size={12} />
                 Экспорт кода
               </button>
+              {selected.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  disabled={deletingSelected}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-red-400 border border-red-500/40 rounded-full hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                >
+                  <X size={12} />
+                  {deletingSelected ? 'Удаление...' : `Удалить (${selected.size})`}
+                </button>
+              )}
             </div>
             <span className="text-xs font-mono text-[#4b6080]">
               Всего: <span className="text-cyan-400 font-bold">{list.length}</span>
+              {selected.size > 0 && <span className="text-cyan-400"> · Выбрано: {selected.size}</span>}
             </span>
           </div>
 
@@ -326,17 +367,33 @@ export default function Accounts() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left border-b border-[#1c2333]">
-                    {['Имя', 'Прокси', 'Последняя проверка', 'Статус', 'Действия'].map((h) => (
-                      <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a]">{h}</th>
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={list.length > 0 && selected.size === list.length}
+                        onChange={() => setSelected(selected.size === list.length ? new Set() : new Set(list.map(a => a.id)))}
+                        className="w-3.5 h-3.5 rounded border-gray-600 bg-[#080c12] accent-cyan-500 cursor-pointer"
+                      />
+                    </th>
+                    {['№', 'Имя', 'Прокси', 'Последняя проверка', 'Статус', 'Действия'].map((h) => (
+                      <th key={h} className="px-4 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a]">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((a) => {
+                  {list.map((a, i) => {
                     const proxyName = proxies.find((p) => p.id === a.proxy_id)?.name ?? '—'
+                    const isChecked = selected.has(a.id)
                     return (
-                      <tr key={a.id} className="border-b border-[#1c2333]/60 hover:bg-[#0f1520] transition-colors group">
-                        <td className="px-5 py-3">
+                      <tr key={a.id} className={`border-b border-[#1c2333]/60 transition-colors group ${isChecked ? 'bg-cyan-500/5' : 'hover:bg-[#0f1520]'}`}>
+                        <td className="px-4 py-3">
+                          <input type="checkbox" checked={isChecked} onChange={() => toggleSelect(a.id)}
+                            className="w-3.5 h-3.5 rounded border-gray-600 bg-[#080c12] accent-cyan-500 cursor-pointer" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-[11px] font-mono text-[#3d4f6a]">{i + 1}</span>
+                        </td>
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
                             <div className="w-7 h-7 rounded-full bg-[#1c2333] border border-[#2a3a50] flex items-center justify-center">
                               <User size={13} className="text-cyan-400/70" />
@@ -344,13 +401,13 @@ export default function Accounts() {
                             <span className="text-white font-medium">{a.name}</span>
                           </div>
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-3">
                           <span className="text-[#4b6080] text-xs">{proxyName}</span>
                         </td>
-                        <td className="px-5 py-3 text-[#4b6080] text-xs">
+                        <td className="px-4 py-3 text-[#4b6080] text-xs">
                           {a.last_check ? new Date(a.last_check).toLocaleString() : '—'}
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-3">
                           {a.is_valid === true && (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[rgba(6,182,212,0.12)] text-cyan-400 border border-cyan-500/40">
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" /> Активен
@@ -363,7 +420,7 @@ export default function Accounts() {
                           )}
                           {a.is_valid == null && <span className="text-[#3d4f6a] text-xs">—</span>}
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <button
                               onClick={() => handleCheck(a.id)}
@@ -391,7 +448,7 @@ export default function Accounts() {
                   })}
                   {list.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-5 py-10 text-center text-[#3d4f6a] text-sm">Нет аккаунтов</td>
+                      <td colSpan={7} className="px-5 py-10 text-center text-[#3d4f6a] text-sm">Нет аккаунтов</td>
                     </tr>
                   )}
                 </tbody>

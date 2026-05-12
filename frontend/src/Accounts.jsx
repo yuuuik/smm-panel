@@ -258,19 +258,7 @@ export default function Accounts() {
               </select>
             </div>
 
-            {/* Toggle — admin only */}
-            {isAdmin && (
-            <div className="flex items-center justify-between py-1">
-              <span className="text-sm text-[#6b7f96]">Показывать браузер при проверке</span>
-              <button
-                type="button"
-                onClick={() => setShowBrowserOnCheck(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${showBrowserOnCheck ? 'bg-cyan-500' : 'bg-[#1c2333]'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${showBrowserOnCheck ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
-            </div>
-            )}
+
 
             {/* Submit */}
             <button
@@ -384,31 +372,6 @@ export default function Accounts() {
                             >
                               {checking === a.id ? 'Проверка...' : 'Проверить'}
                             </button>
-                            {isAdmin && (
-                            <button
-                              onClick={async () => {
-                                setBrowserLoading(s => new Set(s).add(a.id))
-                                try {
-                                  if (openBrowsers.has(a.id)) {
-                                    await closeAccountBrowser(a.id)
-                                    setOpenBrowsers(s => { const n = new Set(s); n.delete(a.id); return n })
-                                  } else {
-                                    await openAccountBrowser(a.id)
-                                    setOpenBrowsers(s => new Set(s).add(a.id))
-                                  }
-                                } catch (err) { setError(err.message) }
-                                finally { setBrowserLoading(s => { const n = new Set(s); n.delete(a.id); return n }) }
-                              }}
-                              disabled={browserLoading.has(a.id)}
-                              className={`text-xs transition-colors disabled:opacity-40 ${
-                                openBrowsers.has(a.id)
-                                  ? 'text-orange-400 hover:text-orange-300'
-                                  : 'text-teal-400 hover:text-teal-300'
-                              }`}
-                            >
-                              {browserLoading.has(a.id) ? '...' : openBrowsers.has(a.id) ? 'Закрыть браузер' : 'Открыть'}
-                            </button>
-                            )}
                             <button
                               onClick={() => handleEditOpen(a)}
                               className="text-xs text-yellow-400 hover:text-yellow-300 transition-colors"

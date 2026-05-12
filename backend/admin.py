@@ -188,7 +188,112 @@ def get_user_tasks(
     return result
 
 
-@router.get("/tasks/{task_id}/logs")
+@router.get("/users/{user_id}/detail")
+def get_user_detail(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    """Return accounts, proxies, templates (with actions+accounts) and tasks for a user."""
+    from .models import FacebookAccount, Proxy, Template, TemplateAction, TemplateAccount, Task
+
+    # Accounts
+    accounts = db.query(FacebookAccount).filter(FacebookAccount.user_id == user_id).all()
+    accounts_data = [
+        {
+            "id": a.id,
+            "name": a.name,
+            "is_valid": a.is_valid,
+            "last_check": a.last_check.isoformat() if a.last_check else None,
+            "proxy_id": a.proxy_id,
+        }
+        for a in accounts
+    ]
+
+    # Proxies
+    proxies = db.query(Proxy).filter(Proxy.user_id == user_id).all()
+    proxies_data = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "ip": p.ip,
+            "port": p.port,
+            "login": p.login,
+            "rotate_url": p.rotate_url,
+            "rotate_delay": p.rotate_delay,
+        }
+        for p in proxies
+    ]
+    proxy_map = {p.id: p.name for p in proxies}
+
+    # Enrich accounts with proxy name
+    for a_dict, a_obj in zip(accounts_data, accounts):
+        a_dict["proxy_name"] = proxy_map.get(a_obj.proxy_id, "—") if a_obj.proxy_id else "—"
+
+    # Templates with full detail
+    templates = db.query(Template).filter(Template.user_id == user_id).all()
+    templates_data = []
+    for t in templates:
+        actions = [
+            {
+                "order": act.action_order,
+                "action_type": act.action_type,
+                "reaction_type": act.reaction_type,
+                "text": act.text,
+                "account_name": act.account.name if act.account else None,
+                "delay": act.delay,
+            }
+            for act in sorted(t.actions, key=lambda x: x.action_order)
+        ]
+        linked_accounts = [
+            {"id": ta.account.id, "name": ta.account.name}
+            for ta in t.accounts
+            if ta.account
+        ]
+        templates_data.append({
+            "id": t.id,
+            "name": t.name,
+            "reaction_type": t.reaction_type,
+            "comment_text": t.comment_text,
+            "reply_text": t.reply_text,
+            "delay_min": t.delay_min,
+            "delay_max": t.delay_max,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "actions": actions,
+            "accounts": linked_accounts,
+        })
+
+    # Tasks with post_urls
+    tasks = (
+        db.query(Task)
+        .filter(Task.user_id == user_id)
+        .order_by(Task.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    tasks_data = [
+        {
+            "id": t.id,
+            "status": t.status,
+            "template_name": t.template.name if t.template else None,
+            "post_urls": t.post_urls or ([t.post_url] if t.post_url else []),
+            "progress_current": t.progress_current,
+            "progress_total": t.progress_total,
+            "error_message": t.error_message,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "finished_at": t.finished_at.isoformat() if t.finished_at else None,
+        }
+        for t in tasks
+    ]
+
+    return {
+        "accounts": accounts_data,
+        "proxies": proxies_data,
+        "templates": templates_data,
+        "tasks": tasks_data,
+    }
+
+
 def get_task_logs(
     task_id: int,
     limit: int = Query(200, le=500),

@@ -218,7 +218,6 @@ def get_user_detail(
         db.query(Task)
         .filter(Task.user_id == user_id)
         .order_by(Task.created_at.desc())
-        .limit(100)
         .all()
     )
     tasks_data = [

@@ -33,6 +33,8 @@ const REACTION_EMOJI = {
   LIKE: '👍', LOVE: '❤️', HAHA: '😂', WOW: '😮', SAD: '😢', ANGRY: '😡',
 }
 
+const TASK_PAGE_SIZES = [10, 25, 50, 75, 100]
+
 function statusBadge(status) {
   const map = {
     running:   'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
@@ -96,6 +98,8 @@ function UserDetailPanel({ userId, onClose }) {
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('accounts')
   const [expandedId, setExpandedId] = useState(null)
+  const [taskPage, setTaskPage] = useState(1)
+  const [taskPageSize, setTaskPageSize] = useState(10)
 
   const load = () => {
     setLoading(true)
@@ -112,6 +116,10 @@ function UserDetailPanel({ userId, onClose }) {
   }
 
   useEffect(load, [userId])
+  useEffect(() => {
+    setTaskPage(1)
+    setExpandedId(null)
+  }, [userId, taskPageSize, activeTab])
 
   if (loading) return (
     <div className="p-10 text-center text-cyan-500 text-xs animate-pulse">
@@ -135,6 +143,11 @@ function UserDetailPanel({ userId, onClose }) {
     { id: 'templates', label: 'Шаблоны',   icon: Layers,     count: data?.templates?.length || 0 },
     { id: 'tasks',     label: 'Задачи',    icon: ListChecks, count: data?.tasks?.length     || 0 },
   ]
+  const tasks = data?.tasks || []
+  const taskPageCount = Math.max(1, Math.ceil(tasks.length / taskPageSize))
+  const safeTaskPage = Math.min(taskPage, taskPageCount)
+  const taskStart = (safeTaskPage - 1) * taskPageSize
+  const visibleTasks = tasks.slice(taskStart, taskStart + taskPageSize)
 
   return (
     <div className="bg-[#05070a] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
@@ -311,13 +324,46 @@ function UserDetailPanel({ userId, onClose }) {
 
         {/* ── ЗАДАЧИ ── */}
         {activeTab === 'tasks' && (
-          data?.tasks?.length === 0
+          tasks.length === 0
             ? <Empty text="Нет задач" />
-            : <div className="space-y-3">
-                {data.tasks.map(task => (
-                  <div key={task.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+            : <div className="space-y-2">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-1 pb-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                      Показано {taskStart + 1}-{Math.min(taskStart + taskPageSize, tasks.length)} из {tasks.length}
+                    </p>
+                    <p className="text-[9px] text-gray-700 mt-0.5">Страница {safeTaskPage} из {taskPageCount}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase text-gray-600">На странице</span>
+                    <select
+                      value={taskPageSize}
+                      onChange={e => setTaskPageSize(Number(e.target.value))}
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] font-bold text-gray-200 focus:outline-none focus:border-cyan-500"
+                    >
+                      {TASK_PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+                    </select>
+                    <button
+                      onClick={() => setTaskPage(p => Math.max(1, p - 1))}
+                      disabled={safeTaskPage === 1}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 text-[10px] font-bold text-gray-400 hover:text-white disabled:opacity-30 disabled:hover:text-gray-400"
+                    >
+                      Назад
+                    </button>
+                    <button
+                      onClick={() => setTaskPage(p => Math.min(taskPageCount, p + 1))}
+                      disabled={safeTaskPage === taskPageCount}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 text-[10px] font-bold text-gray-400 hover:text-white disabled:opacity-30 disabled:hover:text-gray-400"
+                    >
+                      Вперёд
+                    </button>
+                  </div>
+                </div>
+
+                {visibleTasks.map(task => (
+                  <div key={task.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl">
                     {/* Шапка задачи */}
-                    <div className="flex justify-between items-start gap-3 mb-3">
+                    <div className="flex justify-between items-start gap-3 mb-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-white">
@@ -346,7 +392,7 @@ function UserDetailPanel({ userId, onClose }) {
 
                     {/* Ссылки на посты */}
                     {task.post_urls?.length > 0 && (
-                      <div className="mb-3">
+                      <div className="mb-2">
                         <p className="text-[9px] text-gray-600 uppercase font-bold mb-1.5">
                           Целевые ссылки ({task.post_urls.length}):
                         </p>
@@ -369,7 +415,7 @@ function UserDetailPanel({ userId, onClose }) {
 
                     {/* Прогресс бар */}
                     {task.progress_total > 0 && (
-                      <div className="mb-3 h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className="mb-2 h-1 bg-white/5 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-cyan-500 rounded-full transition-all"
                           style={{ width: `${Math.min(100, (task.progress_current / task.progress_total) * 100)}%` }}
@@ -388,6 +434,21 @@ function UserDetailPanel({ userId, onClose }) {
                     {expandedId === `task-${task.id}` && <TaskLogsPanel taskId={task.id} />}
                   </div>
                 ))}
+
+                {taskPageCount > 1 && (
+                  <div className="flex items-center justify-center gap-1 pt-2">
+                    {Array.from({ length: taskPageCount }, (_, idx) => idx + 1).map(page => (
+                      <button
+                        key={page}
+                        onClick={() => setTaskPage(page)}
+                        className={`min-w-8 h-8 rounded-lg text-[10px] font-black transition-all
+                          ${page === safeTaskPage ? 'bg-cyan-500 text-white' : 'bg-white/5 text-gray-500 hover:text-white'}`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
         )}
 
@@ -793,36 +854,36 @@ export default function Admin() {
   const openCount = tickets => tickets?.filter(t => t.status === 'open').length || 0
 
   return (
-    <div className="min-h-screen bg-[#020408] text-gray-300 p-6 font-sans">
+    <div className="min-h-screen bg-[#020408] text-gray-300 p-4 md:p-5 font-sans">
       {/* Шапка */}
-      <div className="max-w-7xl mx-auto flex items-center justify-between mb-8">
+      <div className="max-w-[1500px] mx-auto flex items-center justify-between mb-5">
         <h1 className="text-2xl font-black text-white flex items-center gap-3">
           <ShieldCheck className="text-cyan-500" size={32} /> ADMIN PANEL
         </h1>
-        <div className="flex bg-[#0d1117] p-1.5 rounded-2xl border border-white/5">
+        <div className="flex bg-[#0d1117] p-1 rounded-2xl border border-white/5">
           <button onClick={() => setActiveTab('users')}
-            className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${activeTab === 'users' ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'text-gray-500 hover:text-white'}`}>
+            className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${activeTab === 'users' ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'text-gray-500 hover:text-white'}`}>
             ПОЛЬЗОВАТЕЛИ
           </button>
           <button onClick={() => setActiveTab('support')}
-            className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${activeTab === 'support' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-500 hover:text-white'}`}>
+            className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${activeTab === 'support' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-500 hover:text-white'}`}>
             ПОДДЕРЖКА
           </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[1500px] mx-auto">
 
         {/* ── ПОЛЬЗОВАТЕЛИ ── */}
         {activeTab === 'users' && (
-          <div className="bg-[#0d1117] border border-white/5 rounded-3xl overflow-hidden shadow-sm">
-            <div className="px-8 py-6 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
+          <div className="bg-[#0d1117] border border-white/5 rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
               <div>
                 <h2 className="text-xs font-black uppercase tracking-[0.3em] text-gray-500">База пользователей</h2>
                 <p className="text-[10px] text-gray-700 mt-0.5">{users.length} пользователей</p>
               </div>
               <button onClick={() => setCreateModal(true)}
-                className="bg-cyan-500 hover:bg-cyan-400 text-white text-[10px] font-black px-6 py-3 rounded-xl transition-all shadow-lg shadow-cyan-500/10 flex items-center gap-2">
+                className="bg-cyan-500 hover:bg-cyan-400 text-white text-[10px] font-black px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-cyan-500/10 flex items-center gap-2">
                 <UserPlus size={14} /> ДОБАВИТЬ ЮЗЕРА
               </button>
             </div>
@@ -830,18 +891,18 @@ export default function Admin() {
             <table className="w-full">
               <thead>
                 <tr className="text-[10px] text-gray-600 uppercase font-black border-b border-white/5">
-                  <th className="px-8 py-4 text-left">Пользователь</th>
-                  <th className="px-4 py-4 text-left">Роль</th>
-                  <th className="px-4 py-4 text-left">Подписка</th>
-                  <th className="px-4 py-4 text-left hidden md:table-cell">Ресурсы</th>
-                  <th className="px-8 py-4 text-right">Действия</th>
+                  <th className="px-6 py-3 text-left">Пользователь</th>
+                  <th className="px-3 py-3 text-left">Роль</th>
+                  <th className="px-3 py-3 text-left">Подписка</th>
+                  <th className="px-3 py-3 text-left hidden md:table-cell">Ресурсы</th>
+                  <th className="px-6 py-3 text-right">Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map(user => (
                   <Fragment key={user.id}>
                     <tr className={`border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors ${expandedUser === user.id ? 'bg-cyan-500/[0.03]' : ''}`}>
-                      <td className="px-8 py-4">
+                      <td className="px-6 py-3">
                         <div>
                           <span className="text-white font-bold text-sm">{user.email || user.username}</span>
                           {user.email && user.username !== user.email && (
@@ -853,7 +914,7 @@ export default function Admin() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5">
                           <span className={`text-[9px] px-2 py-0.5 rounded font-black
                             ${user.is_admin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/20' : 'bg-gray-500/10 text-gray-500'}`}>
@@ -865,7 +926,7 @@ export default function Admin() {
                           }
                         </div>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 py-3">
                         <div>
                           <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg
                             ${user.subscription === 'pro'
@@ -878,7 +939,7 @@ export default function Admin() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4 hidden md:table-cell">
+                      <td className="px-3 py-3 hidden md:table-cell">
                         <div className="flex gap-3 text-[9px] text-gray-600">
                           <span title="Аккаунты">👤 {user.accounts_count}</span>
                           <span title="Прокси">🌐 {user.proxies_count}</span>
@@ -886,12 +947,12 @@ export default function Admin() {
                           <span title="Задачи">⚙ {user.tasks_count}</span>
                         </div>
                       </td>
-                      <td className="px-8 py-4">
+                      <td className="px-6 py-3">
                         <div className="flex justify-end gap-2">
                           {/* Управление */}
                           <button
                             onClick={() => setActionsUser(user)}
-                            className="p-2.5 bg-white/5 rounded-xl text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 transition-all"
+                            className="p-2 bg-white/5 rounded-xl text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 transition-all"
                             title="Управление пользователем"
                           >
                             <Lock size={16} />
@@ -899,7 +960,7 @@ export default function Admin() {
                           {/* Детальный просмотр */}
                           <button
                             onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)}
-                            className={`p-2.5 rounded-xl transition-all ${expandedUser === user.id ? 'bg-cyan-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 hover:text-cyan-400'}`}
+                            className={`p-2 rounded-xl transition-all ${expandedUser === user.id ? 'bg-cyan-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 hover:text-cyan-400'}`}
                             title="Детальный просмотр"
                           >
                             <Layers size={16} />
@@ -910,7 +971,7 @@ export default function Admin() {
 
                     {expandedUser === user.id && (
                       <tr className="bg-black/40">
-                        <td colSpan={5} className="px-8 py-6">
+                        <td colSpan={5} className="px-6 py-4">
                           <UserDetailPanel userId={user.id} onClose={() => setExpandedUser(null)} />
                         </td>
                       </tr>

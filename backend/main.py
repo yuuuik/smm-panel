@@ -82,14 +82,6 @@ if os.path.isdir(UPLOAD_DIR):
     app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
-@app.api_route(
-    "/api/{full_path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-)
-async def api_not_found(full_path: str):
-    raise HTTPException(status_code=404, detail=f"API endpoint not found: /api/{full_path}")
-
-
 @app.post("/api/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, data.email, data.password)
@@ -277,6 +269,14 @@ async def upload_image(
 # Раздача фронтенда — должна быть ПОСЛЕДНЕЙ
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 
+
+@app.api_route(
+    "/api/{full_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def api_not_found(full_path: str):
+    raise HTTPException(status_code=404, detail=f"API endpoint not found: /api/{full_path}")
+
 @app.get("/logo.png")
 async def serve_logo():
     return FileResponse(os.path.join(FRONTEND_DIST, "logo.png"), media_type="image/png")
@@ -286,4 +286,6 @@ if os.path.isdir(FRONTEND_DIST):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail=f"API endpoint not found: /{full_path}")
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))

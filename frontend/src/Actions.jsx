@@ -1,13 +1,8 @@
-import { useState, useEffect, useContext, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Play, Square, RotateCcw, Trash2, Plus, ExternalLink, Copy, Pencil } from 'lucide-react'
 import { getTasks, createTask, updateTask, deleteTask, startTask, stopTask, getTemplates } from './api'
-import { AuthContext } from './App'
 
-const ROTATE_MODES = [
-  { value: 'before_account', label: 'Перед каждым аккаунтом' },
-  { value: 'before_each_action', label: 'Перед каждым действием' },
-]
 
 const inputCls =
   'w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_0_3px_rgba(6,182,212,0.15)] transition-all'
@@ -56,7 +51,6 @@ function getStatus(s) {
 }
 
 export default function Actions() {
-  const { isAdmin } = useContext(AuthContext)
   const [tasks, setTasks] = useState([])
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -73,8 +67,6 @@ export default function Actions() {
     template_id: '',
     postUrls: [''],
     max_comments: 10,
-    rotate_proxy_mode: 'before_account',
-    show_browser: true,
   })
 
   useEffect(() => {
@@ -115,12 +107,14 @@ export default function Actions() {
     }
     const filteredUrls = form.postUrls.filter((u) => u.trim())
     if (!filteredUrls.length) { setError('Добавьте хотя бы один URL поста'); return }
+    const invalidUrls = filteredUrls.filter((u) => !u.startsWith('https://'))
+    if (invalidUrls.length) { setError('Все URL постов должны начинаться с https://'); return }
     const payload = {
       template_id: Number(form.template_id),
       post_urls: filteredUrls,
       max_comments: Number(form.max_comments) || 10,
-      rotate_proxy_mode: form.rotate_proxy_mode,
-      show_browser: isAdmin ? form.show_browser : false,
+      rotate_proxy_mode: 'before_account',
+      show_browser: false,
     }
     try {
       if (editingTask) {
@@ -132,6 +126,7 @@ export default function Actions() {
         setSuccess('Задача создана')
       }
       setShowCreate(false)
+      setForm({ template_id: '', postUrls: [''], max_comments: 10 })
       load()
     } catch (err) {
       if (err.resetAt) setLimitResetAt(err.resetAt)
@@ -157,8 +152,6 @@ export default function Actions() {
       template_id: String(t.template_id || ''),
       postUrls: (t.post_urls && t.post_urls.length) ? t.post_urls : [''],
       max_comments: t.max_comments ?? 10,
-      rotate_proxy_mode: t.rotate_proxy_mode || 'before_account',
-      show_browser: t.show_browser ?? true,
     })
     setShowCreate(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -171,8 +164,8 @@ export default function Actions() {
         template_id: t.template_id,
         post_urls: t.post_urls || [],
         max_comments: t.max_comments,
-        rotate_proxy_mode: t.rotate_proxy_mode,
-        show_browser: t.show_browser,
+        rotate_proxy_mode: 'before_account',
+        show_browser: false,
       })
       setSuccess('Задача дублирована')
       load()
@@ -266,7 +259,7 @@ export default function Actions() {
               </div>
               {/* Post URLs list */}
               <div className="md:col-span-2">
-                <label className={labelCls}>URL постов</label>
+                <label className={labelCls}>URL постов <span className="text-cyan-600 normal-case font-normal">(обязательно https://)</span></label>
                 <div className="space-y-2">
                   {form.postUrls.map((url, i) => (
                     <div key={i} className="flex gap-2">
@@ -277,7 +270,7 @@ export default function Actions() {
                           next[i] = e.target.value
                           setForm((f) => ({ ...f, postUrls: next }))
                         }}
-                        className={inputCls}
+                        className={`${inputCls} ${url && !url.startsWith('https://') ? 'border-red-500/50 focus:border-red-500' : ''}`}
                         placeholder="https://facebook.com/post/..."
                       />
                       {form.postUrls.length > 1 && (
@@ -299,41 +292,6 @@ export default function Actions() {
                     + Добавить URL
                   </button>
                 </div>
-              </div>
-              <div>
-                <label className={labelCls}>Режим обновления прокси</label>
-                <select
-                  value={form.rotate_proxy_mode}
-                  onChange={(e) => setForm((f) => ({ ...f, rotate_proxy_mode: e.target.value }))}
-                  className={inputCls}
-                >
-                  {ROTATE_MODES.map((x) => (
-                    <option key={x.value} value={x.value}>{x.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end pb-1">
-                {isAdmin && (
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <button
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, show_browser: !f.show_browser }))}
-                    className={`relative w-10 h-5 rounded-full transition-all ${
-                      form.show_browser
-                        ? 'bg-gradient-to-r from-cyan-600 to-teal-500 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
-                        : 'bg-[#1c2333]'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                        form.show_browser ? 'left-5.5' : 'left-0.5'
-                      }`}
-                      style={{ left: form.show_browser ? '22px' : '2px' }}
-                    />
-                  </button>
-                  <span className="text-xs text-gray-400">Показывать окно браузера</span>
-                </label>
-                )}
               </div>
             </div>
             <div className="flex gap-3">
@@ -386,7 +344,7 @@ export default function Actions() {
           {/* CREATE TASK card — always first */}
           {activeTab === 'all' && (
             <button
-              onClick={() => { setShowCreate(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              onClick={() => { setForm({ template_id: '', postUrls: [''], max_comments: 10 }); setEditingTask(null); setShowCreate(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               className="border-2 border-dashed border-[#1c2333] rounded-2xl p-4 flex flex-col items-center justify-center gap-3 min-h-[180px] hover:border-cyan-500/40 hover:bg-cyan-500/[0.02] hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(6,182,212,0.08)] transition-all group"
             >
               <div className="w-10 h-10 rounded-full border-2 border-dashed border-[#1c2333] group-hover:border-cyan-500/50 flex items-center justify-center text-gray-700 group-hover:text-cyan-500 transition-all">

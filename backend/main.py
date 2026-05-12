@@ -143,21 +143,17 @@ def get_subscription(
     exp = current_user.subscription_expires_at
     if sub == "pro" and exp and exp <= datetime.utcnow():
         sub = "free"
-    cutoff = datetime.utcnow() - timedelta(hours=24)
-    recent_tasks = db.query(_Task).filter(
+    # Count ALL tasks ever created by the user (no time window)
+    total_tasks = db.query(_Task).filter(
         _Task.user_id == current_user.id,
-        _Task.created_at >= cutoff,
-    ).order_by(_Task.created_at.asc()).all()
-    tasks_today = len(recent_tasks)
-    limit_reset_at = None
-    if sub != "pro" and tasks_today >= 2 and recent_tasks:
-        limit_reset_at = (recent_tasks[0].created_at + timedelta(hours=24)).isoformat()
+    ).count()
+    FREE_LIMIT = 5
     return {
         "plan": sub,
-        "tasks_today": tasks_today,
-        "tasks_limit": None if sub == "pro" else 2,
+        "tasks_today": total_tasks,
+        "tasks_limit": None if sub == "pro" else FREE_LIMIT,
         "subscription_expires_at": exp,
-        "limit_reset_at": limit_reset_at,
+        "limit_reset_at": None,
     }
 
 

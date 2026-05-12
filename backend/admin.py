@@ -1,6 +1,26 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
-import { adminGetUsers, adminUpdateUser, adminDeleteUser, adminGetUserTasks, adminGetTaskLogs, adminCreateUser, adminGetSupportTickets, adminGetSupportTicket, adminReplySupportTicket, adminUpdateSupportTicket, adminDeleteSupportTicket, adminSetUserSubscription, adminGetUserDetail } from './api'
-import { Users, ShieldCheck, Trash2, KeyRound, AlertCircle, CheckCircle, ShieldOff, ChevronDown, ChevronRight, ListChecks, ScrollText, XCircle, UserPlus, MailCheck, Mail, MessageCircle, Send, Lock, Crown, Server, Database, Layers, ExternalLink, User, Globe } from 'lucide-react'
+import { 
+  adminGetUsers, adminUpdateUser, adminDeleteUser, adminGetUserTasks, 
+  adminGetTaskLogs, adminCreateUser, adminGetSupportTickets, 
+  adminGetSupportTicket, adminReplySupportTicket, adminUpdateSupportTicket, 
+  adminDeleteSupportTicket, adminSetUserSubscription, adminGetUserDetail 
+} from './api'
+import { 
+  Users, ShieldCheck, Trash2, KeyRound, AlertCircle, CheckCircle, 
+  ShieldOff, ChevronDown, ChevronRight, ListChecks, ScrollText, 
+  XCircle, UserPlus, MailCheck, Mail, MessageCircle, Send, 
+  Lock, Crown, Server, Database, Layers, ExternalLink, User, Globe 
+} from 'lucide-react'
+
+// Константы для отображения типов действий
+const ACTION_LABELS = {
+  like: 'Лайк',
+  comment: 'Коммент',
+  repost: 'Репост',
+  subscribe: 'Подписка',
+  view: 'Просмотр',
+  reaction: 'Реакция'
+}
 
 function statusBadge(status) {
   const map = {
@@ -13,6 +33,8 @@ function statusBadge(status) {
   }
   return `inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${map[status] || map.pending}`
 }
+
+// ── Вспомогательные панели ──────────────────────────────────────────────────
 
 function TaskLogsPanel({ taskId, onClose }) {
   const [logs, setLogs] = useState([])
@@ -81,7 +103,6 @@ function UserDetailPanel({ userId, onClose }) {
 
   return (
     <div className="mx-1 mb-4 bg-[#080c12] border border-[#1c2333] rounded-2xl overflow-hidden">
-      {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-[#1c2333] bg-[#0a0f18]">
         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
         <span className="text-[10px] font-bold text-cyan-400 tracking-[0.2em] uppercase">Детали пользователя</span>
@@ -93,7 +114,6 @@ function UserDetailPanel({ userId, onClose }) {
 
       {!loading && !error && data && (
         <>
-          {/* Sub-tabs */}
           <div className="flex gap-0 border-b border-[#1c2333]">
             {tabs.map(({ key, label, icon: Icon, count }) => (
               <button key={key} onClick={() => setTab(key)}
@@ -112,7 +132,6 @@ function UserDetailPanel({ userId, onClose }) {
             ))}
           </div>
 
-          {/* ── ACCOUNTS ── */}
           {tab === 'accounts' && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -144,7 +163,6 @@ function UserDetailPanel({ userId, onClose }) {
             </div>
           )}
 
-          {/* ── PROXIES ── */}
           {tab === 'proxies' && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -173,7 +191,6 @@ function UserDetailPanel({ userId, onClose }) {
             </div>
           )}
 
-          {/* ── TEMPLATES ── */}
           {tab === 'templates' && (
             <div className="divide-y divide-[#1c2333]/40">
               {data.templates.length === 0 ? (
@@ -244,7 +261,6 @@ function UserDetailPanel({ userId, onClose }) {
             </div>
           )}
 
-          {/* ── TASKS ── */}
           {tab === 'tasks' && (
             <div className="divide-y divide-[#1c2333]/40">
               {data.tasks.length === 0 ? (
@@ -496,6 +512,8 @@ function SupportAdminPanel() {
   )
 }
 
+// ── Main Admin Component ─────────────────────────────────────────────────────
+
 export default function Admin() {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
@@ -543,43 +561,8 @@ export default function Admin() {
     finally { setActionLoading(null) }
   }
 
-  const handleVerifyEmail = async (user) => {
-    setActionLoading(user.id)
-    setError(''); setSuccess('')
-    try {
-      await adminUpdateUser(user.id, { is_email_verified: !user.is_email_verified })
-      setSuccess(user.is_email_verified ? 'Email помечен как неподтверждённый' : `Email для ${user.email || user.username} подтверждён`)
-      load()
-    } catch (e) { setError(e.message) }
-    finally { setActionLoading(null) }
-  }
-
-  const handleToggleSubscription = async (user) => {
-    setActionLoading(user.id)
-    setError(''); setSuccess('')
-    const newSub = (user.subscription || 'free') === 'pro' ? 'free' : 'pro'
-    try {
-      await adminSetUserSubscription(user.id, newSub)
-      setSuccess(newSub === 'pro' ? `Подписка Pro выдана для ${user.email || user.username}` : `Подписка Pro снята`)
-      load()
-    } catch (e) { setError(e.message) }
-    finally { setActionLoading(null) }
-  }
-
-  const handleSetPassword = async () => {
-    if (!newPassword.trim()) return
-    setActionLoading(passwordModal.userId)
-    setError(''); setSuccess('')
-    try {
-      await adminUpdateUser(passwordModal.userId, { new_password: newPassword })
-      setSuccess(`Пароль для ${passwordModal.username} изменён`)
-      setPasswordModal(null)
-      setNewPassword('')
-    } catch (e) { setError(e.message) }
-    finally { setActionLoading(null) }
-  }
-
-  const handleCreateUser = async () => {
+  const handleCreateUser = async (e) => {
+    e.preventDefault()
     if (!createForm.email.trim() || !createForm.password.trim()) return
     setCreateLoading(true)
     setError(''); setSuccess('')
@@ -599,293 +582,131 @@ export default function Admin() {
   }
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Администрирование</h1>
-          <p className="text-base font-semibold text-gray-400 mt-1">Управление пользователями системы</p>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <ShieldCheck className="text-cyan-400" /> Админ-панель
+        </h1>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setActiveTab('users')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'users' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-[#151b27] text-gray-500 border border-[#1c2333]'}`}
+          >Пользователи</button>
+          <button 
+            onClick={() => setActiveTab('support')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'support' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40' : 'bg-[#151b27] text-gray-500 border border-[#1c2333]'}`}
+          >Поддержка</button>
         </div>
-        {activeTab === 'users' && (
-          <button
-            onClick={() => { setCreateModal(true); setError('') }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-cyan-600 to-teal-500 text-white text-xs font-black tracking-widest uppercase hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all"
-          >
-            <UserPlus size={14} /> Добавить
-          </button>
-        )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-[#1c2333] pb-0">
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold tracking-widest uppercase border-b-2 transition-colors ${activeTab === 'users' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-[#4b6080] hover:text-gray-300'}`}
-        >
-          <Users size={13} /> Пользователи
-        </button>
-        <button
-          onClick={() => setActiveTab('support')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold tracking-widest uppercase border-b-2 transition-colors ${activeTab === 'support' ? 'border-purple-400 text-purple-400' : 'border-transparent text-[#4b6080] hover:text-gray-300'}`}
-        >
-          <MessageCircle size={13} /> Обращения
-        </button>
-      </div>
+      {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">{error}</div>}
+      {success && <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-sm">{success}</div>}
 
-      {error && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-[rgba(239,68,68,0.08)] border border-red-500/30 text-red-400 text-sm">
-          <AlertCircle size={15} /> {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-[rgba(6,182,212,0.08)] border border-cyan-500/30 text-cyan-400 text-sm">
-          <CheckCircle size={15} /> {success}
-        </div>
-      )}
-
-      {/* Create user modal */}
-      {createModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-bold mb-4 flex items-center gap-2"><UserPlus size={16} className="text-cyan-400" /> Новый пользователь</h3>
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="text-[10px] uppercase tracking-widest text-[#4b6080] mb-1 block">Email *</label>
-                <input
-                  type="email"
-                  value={createForm.email}
-                  onChange={(e) => setCreateForm(f => ({ ...f, email: e.target.value }))}
-                  className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500"
-                  placeholder="user@example.com"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-widest text-[#4b6080] mb-1 block">Пароль *</label>
-                <input
-                  type="password"
-                  value={createForm.password}
-                  onChange={(e) => setCreateForm(f => ({ ...f, password: e.target.value }))}
-                  className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500"
-                  placeholder="Минимум 6 символов"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-widest text-[#4b6080] mb-1 block">Имя пользователя (необязательно)</label>
-                <input
-                  type="text"
-                  value={createForm.username}
-                  onChange={(e) => setCreateForm(f => ({ ...f, username: e.target.value }))}
-                  className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500"
-                  placeholder="Автоматически из email"
-                />
-              </div>
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <div
-                  onClick={() => setCreateForm(f => ({ ...f, is_email_verified: !f.is_email_verified }))}
-                  className={`w-10 h-5 rounded-full transition-colors flex items-center px-0.5 ${createForm.is_email_verified ? 'bg-cyan-500' : 'bg-[#1c2333]'}`}
-                >
-                  <span className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${createForm.is_email_verified ? 'translate-x-5' : 'translate-x-0'}`} />
-                </div>
-                <span className="text-sm text-gray-400">Email подтверждён</span>
-              </label>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={handleCreateUser}
-                disabled={createLoading || !createForm.email || !createForm.password}
-                className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-cyan-600 to-teal-500 text-white text-xs font-black tracking-widest uppercase hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all disabled:opacity-40"
-              >
-                {createLoading ? 'Создание...' : 'Создать'}
-              </button>
-              <button
-                onClick={() => { setCreateModal(false); setCreateForm({ email: '', password: '', username: '', is_email_verified: false }) }}
-                className="px-4 py-2.5 rounded-full border border-[#1c2333] text-gray-500 text-xs font-semibold hover:border-red-500/40 hover:text-red-400 transition-all"
-              >
-                Отмена
-              </button>
-            </div>
+      {activeTab === 'users' ? (
+        <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-[#1c2333] flex justify-between items-center">
+             <span className="text-white font-semibold">Список пользователей</span>
+             <button onClick={() => setCreateModal(true)} className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl transition-colors">
+               <UserPlus size={14} /> Создать пользователя
+             </button>
           </div>
-        </div>
-      )}
-
-      {/* Password modal */}
-      {passwordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-bold mb-1">Новый пароль</h3>
-            <p className="text-xs text-gray-500 mb-4">Пользователь: <span className="text-cyan-400">{passwordModal.username}</span></p>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
-              className="w-full px-3 py-2.5 bg-[#080c12] border border-[#1c2333] rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500 mb-4"
-              placeholder="Минимум 6 символов"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleSetPassword}
-                disabled={actionLoading === passwordModal.userId}
-                className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-cyan-600 to-teal-500 text-white text-xs font-black tracking-widest uppercase hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all disabled:opacity-40"
-              >
-                Сохранить
-              </button>
-              <button
-                onClick={() => { setPasswordModal(null); setNewPassword('') }}
-                className="px-4 py-2.5 rounded-full border border-[#1c2333] text-gray-500 text-xs font-semibold hover:border-red-500/40 hover:text-red-400 transition-all"
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'support' ? (
-        <SupportAdminPanel />
-      ) : (
-      <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl overflow-hidden" style={{ boxShadow: '0 0 32px rgba(6,182,212,0.04)' }}>
-        <div className="px-5 py-4 border-b border-[#1c2333] flex items-center gap-2">
-          <Users size={15} className="text-cyan-400" />
-          <span className="text-white font-semibold text-sm">Пользователи</span>
-          <span className="ml-auto px-2.5 py-0.5 rounded-full bg-[#151b27] border border-[#1c2333] text-gray-500 text-[10px] font-semibold">{list.length}</span>
-        </div>
-
-        {loading ? (
-          <p className="p-6 text-[#4b6080] text-sm">Загрузка...</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-[#1c2333]">
-                  <th className="px-3 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a] w-10" />
-                  {['Пользователь', 'Email'].map((h) => (
-                    <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a]">{h}</th>
-                  ))}
-                  {['Аккаунты', 'Прокси', 'Шаблоны', 'Задачи'].map((h) => (
-                    <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a] text-center">{h}</th>
-                  ))}
-                  {['Статус', 'Действия'].map((h) => (
-                    <th key={h} className="px-5 py-3 text-[10px] font-semibold tracking-widest uppercase text-[#3d4f6a]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((u) => (
-                  <Fragment key={u.id}>
-                    <tr className={`border-b border-[#1c2333]/60 transition-colors ${expandedUser === u.id ? 'bg-[#0f1520]' : 'hover:bg-[#0f1520]'}`}>
-                      {/* Expand toggle */}
-                      <td className="pl-3 py-3">
-                        <button
-                          onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
-                          title="Задачи пользователя"
-                          className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${expandedUser === u.id ? 'bg-[rgba(6,182,212,0.15)] border-cyan-500/50 text-cyan-400' : 'bg-[#151b27] border-[#1c2333] text-[#4b6080] hover:text-cyan-400 hover:border-cyan-500/40'}`}
-                        >
-                          {expandedUser === u.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <table className="w-full text-left text-sm border-collapse">
+            <thead>
+              <tr className="bg-[#151b27]/50 text-gray-500 text-[10px] uppercase tracking-widest font-bold">
+                <th className="px-6 py-4">Пользователь</th>
+                <th className="px-6 py-4">Статус</th>
+                <th className="px-6 py-4">Подписка</th>
+                <th className="px-6 py-4 text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map(user => (
+                <Fragment key={user.id}>
+                  <tr className={`border-t border-[#1c2333] hover:bg-white/[0.02] transition-colors ${expandedUser === user.id ? 'bg-white/[0.03]' : ''}`}>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-white font-medium">{user.email || user.username}</span>
+                        <span className="text-[10px] text-gray-600 font-mono">ID: {user.id}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        {user.is_admin && <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] font-bold">ADMIN</span>}
+                        {user.is_email_verified ? <CheckCircle size={14} className="text-green-500" /> : <AlertCircle size={14} className="text-gray-600" />}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                       <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${user.subscription === 'pro' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-gray-500/10 text-gray-500 border border-gray-500/20'}`}>
+                         {user.subscription?.toUpperCase() || 'FREE'}
+                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)} className="p-2 text-gray-500 hover:text-cyan-400 transition-colors">
+                          <Layers size={16} />
                         </button>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center border ${u.is_admin ? 'bg-[rgba(168,85,247,0.15)] border-purple-500/40' : 'bg-[#1c2333] border-[#2a3a50]'}`}>
-                            <Users size={12} className={u.is_admin ? 'text-purple-400' : 'text-cyan-400/70'} />
-                          </div>
-                          <span className="text-white font-medium">{u.username}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-[#4b6080] text-xs">{u.email || '—'}</td>
-                      <td className="px-5 py-3 text-center">
-                        <span className="text-cyan-400 font-bold text-xs">{u.accounts_count}</span>
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        <span className="text-cyan-400 font-bold text-xs">{u.proxies_count}</span>
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        <span className="text-purple-400 font-bold text-xs">{u.templates_count}</span>
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        <button
-                          onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
-                          className={`font-bold text-xs transition-colors ${expandedUser === u.id ? 'text-cyan-400' : 'text-pink-400 hover:text-cyan-400'}`}
-                          title="Показать задачи"
-                        >
-                          {u.tasks_count}
+                        <button onClick={() => handleToggleAdmin(user)} className={`p-2 transition-colors ${user.is_admin ? 'text-purple-400 hover:text-gray-400' : 'text-gray-500 hover:text-purple-400'}`}>
+                          <ShieldCheck size={16} />
                         </button>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex flex-col gap-1">
-                          {u.is_admin && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[rgba(168,85,247,0.12)] text-purple-400 border border-purple-500/40">
-                              <ShieldCheck size={10} /> Админ
-                            </span>
-                          )}
-                          {(u.subscription || 'free') === 'pro' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/40">
-                              <Crown size={10} /> Pro
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handleVerifyEmail(u)}
-                            disabled={actionLoading === u.id}
-                            title={u.is_email_verified ? 'Снять подтверждение email' : 'Подтвердить email'}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all disabled:opacity-40 ${u.is_email_verified ? 'bg-[rgba(6,182,212,0.10)] text-cyan-400 border-cyan-500/30 hover:bg-[rgba(239,68,68,0.08)] hover:text-red-400 hover:border-red-500/30' : 'bg-[rgba(239,68,68,0.10)] text-red-400 border-red-500/30 hover:bg-[rgba(6,182,212,0.08)] hover:text-cyan-400 hover:border-cyan-500/30'}`}
-                          >
-                            {u.is_email_verified ? <><MailCheck size={10} /> Email ✓</> : <><Mail size={10} /> Email ✗</>}
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => { setPasswordModal({ userId: u.id, username: u.email || u.username }); setNewPassword('') }}
-                            disabled={actionLoading === u.id}
-                            title="Сменить пароль"
-                            className="w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center text-gray-600 hover:text-cyan-400 hover:border-cyan-500/40 transition-all disabled:opacity-40"
-                          >
-                            <KeyRound size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleToggleSubscription(u)}
-                            disabled={actionLoading === u.id}
-                            title={(u.subscription || 'free') === 'pro' ? 'Снять Pro подписку' : 'Выдать Pro подписку'}
-                            className={`w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center transition-all disabled:opacity-40 ${(u.subscription || 'free') === 'pro' ? 'text-yellow-400 hover:text-red-400 hover:border-red-500/40' : 'text-gray-600 hover:text-yellow-400 hover:border-yellow-500/40'}`}
-                          >
-                            <Crown size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleToggleAdmin(u)}
-                            disabled={actionLoading === u.id}
-                            title={u.is_admin ? 'Снять права администратора' : 'Выдать права администратора'}
-                            className={`w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center transition-all disabled:opacity-40 ${u.is_admin ? 'text-purple-400 hover:text-red-400 hover:border-red-500/40' : 'text-gray-600 hover:text-purple-400 hover:border-purple-500/40'}`}
-                          >
-                            {u.is_admin ? <ShieldOff size={13} /> : <ShieldCheck size={13} />}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(u)}
-                            disabled={actionLoading === u.id}
-                            title="Удалить пользователя"
-                            className="w-7 h-7 rounded-lg bg-[#151b27] border border-[#1c2333] flex items-center justify-center text-gray-600 hover:text-red-400 hover:border-red-500/40 transition-all disabled:opacity-40"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
+                        <button onClick={() => handleDelete(user)} className="p-2 text-gray-500 hover:text-red-400 transition-colors">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedUser === user.id && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-4 bg-[#0a0f18]">
+                        <UserDetailPanel userId={user.id} onClose={() => setExpandedUser(null)} />
                       </td>
                     </tr>
-                    {expandedUser === u.id && (
-                      <UserDetailPanel userId={u.id} onClose={() => setExpandedUser(null)} />
-                    )}
-                  </Fragment>
-                ))}
-                {list.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center text-[#3d4f6a] text-sm">Нет пользователей</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <SupportAdminPanel />
+      )}
+
+      {/* Модалка создания пользователя */}
+      {createModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold text-white mb-6">Новый пользователь</h2>
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              <input 
+                type="email" placeholder="Email" required
+                className="w-full bg-[#080c12] border border-[#1c2333] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50"
+                value={createForm.email} onChange={e => setCreateForm({...createForm, email: e.target.value})}
+              />
+              <input 
+                type="text" placeholder="Username (опционально)"
+                className="w-full bg-[#080c12] border border-[#1c2333] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50"
+                value={createForm.username} onChange={e => setCreateForm({...createForm, username: e.target.value})}
+              />
+              <input 
+                type="password" placeholder="Пароль" required
+                className="w-full bg-[#080c12] border border-[#1c2333] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50"
+                value={createForm.password} onChange={e => setCreateForm({...createForm, password: e.target.value})}
+              />
+              <div className="flex items-center gap-3 px-1">
+                <input 
+                  type="checkbox" id="v_mail"
+                  checked={createForm.is_email_verified} onChange={e => setCreateForm({...createForm, is_email_verified: e.target.checked})}
+                />
+                <label htmlFor="v_mail" className="text-sm text-gray-400">Email подтвержден</label>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setCreateModal(false)} className="flex-1 px-4 py-3 rounded-xl bg-[#1c2333] text-white font-bold text-sm">Отмена</button>
+                <button type="submit" disabled={createLoading} className="flex-1 px-4 py-3 rounded-xl bg-cyan-600 text-white font-bold text-sm hover:bg-cyan-500 disabled:opacity-50">
+                  {createLoading ? 'Создание...' : 'Создать'}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </div>
+        </div>
       )}
     </div>
   )

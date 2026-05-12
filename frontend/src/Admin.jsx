@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
-import { adminGetUsers, adminUpdateUser, adminDeleteUser, adminGetUserTasks, adminGetTaskLogs, adminCreateUser, adminGetSupportTickets, adminGetSupportTicket, adminReplySupportTicket, adminUpdateSupportTicket, adminDeleteSupportTicket, adminSetUserSubscription } from './api'
-import { Users, ShieldCheck, Trash2, KeyRound, AlertCircle, CheckCircle, ShieldOff, ChevronDown, ChevronRight, ListChecks, ScrollText, XCircle, UserPlus, MailCheck, Mail, MessageCircle, Send, Lock, Crown } from 'lucide-react'
+import { adminGetUsers, adminUpdateUser, adminDeleteUser, adminGetUserTasks, adminGetTaskLogs, adminCreateUser, adminGetSupportTickets, adminGetSupportTicket, adminReplySupportTicket, adminUpdateSupportTicket, adminDeleteSupportTicket, adminSetUserSubscription, adminGetUserDetail } from './api'
+import { Users, ShieldCheck, Trash2, KeyRound, AlertCircle, CheckCircle, ShieldOff, ChevronDown, ChevronRight, ListChecks, ScrollText, XCircle, UserPlus, MailCheck, Mail, MessageCircle, Send, Lock, Crown, Server, Database, Layers, ExternalLink, User, Globe } from 'lucide-react'
 
 function statusBadge(status) {
   const map = {
@@ -56,67 +56,265 @@ function TaskLogsPanel({ taskId, onClose }) {
   )
 }
 
-function UserTasksPanel({ userId }) {
-  const [tasks, setTasks] = useState([])
+const ACTION_LABELS = {
+  like: 'Лайк', love: 'Сердце', haha: 'Хаха', wow: 'Вау', sad: 'Грустно', angry: 'Злость',
+  comment: 'Комментарий', reply: 'Ответ', react: 'Реакция', share: 'Поделиться',
+}
+
+function UserDetailPanel({ userId, onClose }) {
+  const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('accounts')
   const [openLogsFor, setOpenLogsFor] = useState(null)
+  const [expandedTemplate, setExpandedTemplate] = useState(null)
 
   useEffect(() => {
-    adminGetUserTasks(userId)
-      .then(setTasks)
+    adminGetUserDetail(userId)
+      .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [userId])
 
-  if (loading) return <tr><td colSpan={9} className="px-8 pb-3 text-[#4b6080] text-xs">Загрузка задач...</td></tr>
-  if (tasks.length === 0) return <tr><td colSpan={9} className="px-8 pb-3 text-[#3d4f6a] text-xs">Задач нет</td></tr>
+  const tabs = [
+    { key: 'accounts', label: 'Аккаунты', icon: User, count: data?.accounts?.length },
+    { key: 'proxies',  label: 'Прокси',   icon: Globe, count: data?.proxies?.length },
+    { key: 'templates',label: 'Шаблоны',  icon: Layers, count: data?.templates?.length },
+    { key: 'tasks',    label: 'Задачи',   icon: ListChecks, count: data?.tasks?.length },
+  ]
 
   return (
-    <>
-      {tasks.map((t) => (
-        <>
-          <tr key={t.id} className="border-b border-[#1c2333]/30 bg-[#080c12]">
-            <td className="pl-14 pr-3 py-2" colSpan={2}>
-              <div className="flex items-center gap-2">
-                <ListChecks size={11} className="text-[#4b6080] flex-shrink-0" />
-                <span className="text-[11px] text-gray-400">#{t.id}</span>
-                <span className="text-[11px] text-gray-500 truncate max-w-[160px]">{t.template_name || '—'}</span>
+    <tr>
+      <td colSpan={9} className="p-0">
+        <div className="mx-4 mb-4 bg-[#080c12] border border-[#1c2333] rounded-2xl overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-[#1c2333] bg-[#0a0f18]">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+            <span className="text-[10px] font-bold text-cyan-400 tracking-[0.2em] uppercase">Детали пользователя</span>
+            <button onClick={onClose} className="ml-auto text-gray-600 hover:text-red-400 transition-colors"><XCircle size={14} /></button>
+          </div>
+
+          {loading ? (
+            <p className="px-5 py-8 text-[#4b6080] text-xs text-center">Загрузка...</p>
+          ) : (
+            <>
+              {/* Sub-tabs */}
+              <div className="flex gap-0 border-b border-[#1c2333]">
+                {tabs.map(({ key, label, icon: Icon, count }) => (
+                  <button key={key} onClick={() => setTab(key)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-[10px] font-bold tracking-widest uppercase border-b-2 transition-colors ${
+                      tab === key ? 'border-cyan-400 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-[#4b6080] hover:text-gray-300'
+                    }`}
+                  >
+                    <Icon size={11} />
+                    {label}
+                    {count !== undefined && (
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${tab === key ? 'bg-cyan-500/20 text-cyan-300' : 'bg-[#1c2333] text-[#4b6080]'}`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
-              <p className="text-[10px] text-[#3d4f6a] mt-0.5 truncate max-w-xs pl-4">{t.post_url || ''}</p>
-            </td>
-            <td className="px-3 py-2 text-center" colSpan={4}>
-              <span className={statusBadge(t.status)}>{t.status}</span>
-              {t.error_message && (
-                <p className="text-[10px] text-red-400 mt-1 max-w-[240px] truncate">{t.error_message}</p>
+
+              {/* ── ACCOUNTS ── */}
+              {tab === 'accounts' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-[#1c2333]/60">
+                        {['№', 'Имя аккаунта', 'Прокси', 'Последняя проверка', 'Статус'].map(h => (
+                          <th key={h} className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-widest text-[#3d4f6a]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.accounts.length === 0 ? (
+                        <tr><td colSpan={5} className="px-4 py-6 text-center text-[#3d4f6a]">Нет аккаунтов</td></tr>
+                      ) : data.accounts.map((a, i) => (
+                        <tr key={a.id} className="border-b border-[#1c2333]/30 hover:bg-white/[0.01]">
+                          <td className="px-4 py-2.5 text-[#3d4f6a] font-mono">{i + 1}</td>
+                          <td className="px-4 py-2.5 font-medium text-white">{a.name}</td>
+                          <td className="px-4 py-2.5 text-[#4b6080]">{a.proxy_name}</td>
+                          <td className="px-4 py-2.5 text-[#4b6080]">{a.last_check ? new Date(a.last_check).toLocaleString() : '—'}</td>
+                          <td className="px-4 py-2.5">
+                            {a.is_valid === true && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">Активен</span>}
+                            {a.is_valid === false && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-400/10 text-red-400 border border-red-400/20">Ошибка</span>}
+                            {a.is_valid == null && <span className="text-[#3d4f6a]">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </td>
-            <td className="px-3 py-2 text-[10px] text-[#3d4f6a]">
-              {t.progress_current}/{t.progress_total}
-            </td>
-            <td className="px-3 py-2 text-[10px] text-[#3d4f6a]">
-              {t.created_at ? new Date(t.created_at).toLocaleString() : '—'}
-            </td>
-            <td className="px-3 py-2">
-              <button
-                onClick={() => setOpenLogsFor(openLogsFor === t.id ? null : t.id)}
-                className="flex items-center gap-1 text-[10px] text-[#4b6080] hover:text-cyan-400 transition-colors"
-              >
-                <ScrollText size={11} />
-                Логи
-                {openLogsFor === t.id ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              </button>
-            </td>
-          </tr>
-          {openLogsFor === t.id && (
-            <tr key={`logs-${t.id}`} className="bg-[#080c12]">
-              <td colSpan={9} className="px-14 pb-3">
-                <TaskLogsPanel taskId={t.id} onClose={() => setOpenLogsFor(null)} />
-              </td>
-            </tr>
+
+              {/* ── PROXIES ── */}
+              {tab === 'proxies' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-[#1c2333]/60">
+                        {['№', 'Имя', 'IP:Порт', 'Логин', 'URL ротации', 'Задержка'].map(h => (
+                          <th key={h} className="px-4 py-2.5 text-left text-[9px] font-semibold uppercase tracking-widest text-[#3d4f6a]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.proxies.length === 0 ? (
+                        <tr><td colSpan={6} className="px-4 py-6 text-center text-[#3d4f6a]">Нет прокси</td></tr>
+                      ) : data.proxies.map((p, i) => (
+                        <tr key={p.id} className="border-b border-[#1c2333]/30 hover:bg-white/[0.01]">
+                          <td className="px-4 py-2.5 text-[#3d4f6a] font-mono">{i + 1}</td>
+                          <td className="px-4 py-2.5 font-medium text-white">{p.name}</td>
+                          <td className="px-4 py-2.5 font-mono text-gray-300">{p.ip}:{p.port}</td>
+                          <td className="px-4 py-2.5 text-[#4b6080]">{p.login || '—'}</td>
+                          <td className="px-4 py-2.5 text-[#4b6080] font-mono truncate max-w-[160px]">{p.rotate_url || '—'}</td>
+                          <td className="px-4 py-2.5 text-[#4b6080]">{p.rotate_delay}s</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* ── TEMPLATES ── */}
+              {tab === 'templates' && (
+                <div className="divide-y divide-[#1c2333]/40">
+                  {data.templates.length === 0 ? (
+                    <p className="px-5 py-6 text-center text-[#3d4f6a] text-xs">Нет шаблонов</p>
+                  ) : data.templates.map((t, i) => (
+                    <div key={t.id}>
+                      <button
+                        onClick={() => setExpandedTemplate(expandedTemplate === t.id ? null : t.id)}
+                        className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/[0.01] text-left transition-colors"
+                      >
+                        <span className="text-[10px] font-mono text-[#3d4f6a] w-5">{i + 1}</span>
+                        <span className="font-semibold text-white text-xs flex-1">{t.name}</span>
+                        <div className="flex items-center gap-2 text-[9px] text-[#4b6080]">
+                          <span className="px-2 py-0.5 rounded bg-[#1c2333]">{t.actions.length} действий</span>
+                          <span className="px-2 py-0.5 rounded bg-[#1c2333]">{t.accounts.length} аккаунтов</span>
+                          {t.reaction_type && <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">{t.reaction_type}</span>}
+                        </div>
+                        {expandedTemplate === t.id ? <ChevronDown size={12} className="text-[#4b6080] flex-shrink-0" /> : <ChevronRight size={12} className="text-[#4b6080] flex-shrink-0" />}
+                      </button>
+
+                      {expandedTemplate === t.id && (
+                        <div className="px-5 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Template info */}
+                          <div className="bg-[#0a0f18] border border-[#1c2333] rounded-xl p-4">
+                            <p className="text-[9px] font-bold text-[#3d4f6a] uppercase tracking-widest mb-3">Основные настройки</p>
+                            <div className="space-y-2 text-xs">
+                              {t.reaction_type && <div className="flex gap-2"><span className="text-[#4b6080] w-28">Реакция:</span><span className="text-white">{t.reaction_type}</span></div>}
+                              {t.comment_text && <div className="flex gap-2"><span className="text-[#4b6080] w-28">Текст коммента:</span><span className="text-white break-all">{t.comment_text}</span></div>}
+                              {t.reply_text && <div className="flex gap-2"><span className="text-[#4b6080] w-28">Текст ответа:</span><span className="text-white break-all">{t.reply_text}</span></div>}
+                              <div className="flex gap-2"><span className="text-[#4b6080] w-28">Задержка:</span><span className="text-white">{t.delay_min}–{t.delay_max}с</span></div>
+                            </div>
+
+                            {t.accounts.length > 0 && (
+                              <>
+                                <p className="text-[9px] font-bold text-[#3d4f6a] uppercase tracking-widest mt-4 mb-2">Аккаунты ({t.accounts.length})</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {t.accounts.map(a => (
+                                    <span key={a.id} className="px-2 py-0.5 rounded-full text-[10px] bg-[#1c2333] text-gray-300 border border-[#2a3a50]">{a.name}</span>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Actions list */}
+                          <div className="bg-[#0a0f18] border border-[#1c2333] rounded-xl p-4">
+                            <p className="text-[9px] font-bold text-[#3d4f6a] uppercase tracking-widest mb-3">Действия ({t.actions.length})</p>
+                            {t.actions.length === 0 ? (
+                              <p className="text-[#3d4f6a] text-xs">Нет действий</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {t.actions.map((act, ai) => (
+                                  <div key={ai} className="flex items-start gap-2.5 text-xs">
+                                    <span className="w-5 h-5 rounded flex-shrink-0 bg-[#1c2333] flex items-center justify-center text-[9px] font-bold text-[#4b6080]">{act.order}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-cyan-400 font-bold uppercase text-[9px]">{ACTION_LABELS[act.action_type] || act.action_type}</span>
+                                        {act.reaction_type && <span className="text-purple-400 text-[9px]">· {act.reaction_type}</span>}
+                                        {act.account_name && <span className="text-[#4b6080] text-[9px]">· {act.account_name}</span>}
+                                        <span className="text-[#3d4f6a] text-[9px] ml-auto">{act.delay}с</span>
+                                      </div>
+                                      {act.text && <p className="text-gray-400 mt-0.5 break-all leading-relaxed">{act.text}</p>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── TASKS ── */}
+              {tab === 'tasks' && (
+                <div className="divide-y divide-[#1c2333]/40">
+                  {data.tasks.length === 0 ? (
+                    <p className="px-5 py-6 text-center text-[#3d4f6a] text-xs">Нет задач</p>
+                  ) : data.tasks.map((t) => (
+                    <div key={t.id}>
+                      <div className="flex items-start gap-3 px-5 py-3 hover:bg-white/[0.01] transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <span className="text-[10px] font-mono text-[#3d4f6a]">#{t.id}</span>
+                            <span className="text-xs font-semibold text-white">{t.template_name || '—'}</span>
+                            <span className={statusBadge(t.status)}>{t.status}</span>
+                            <span className="text-[10px] text-[#4b6080] ml-auto">{t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</span>
+                          </div>
+                          {/* Progress */}
+                          {(t.progress_total > 0) && (
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <div className="h-1 flex-1 bg-[#1c2333] rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 rounded-full transition-all"
+                                  style={{ width: `${Math.round((t.progress_current / t.progress_total) * 100)}%` }} />
+                              </div>
+                              <span className="text-[9px] text-[#4b6080] font-mono">{t.progress_current}/{t.progress_total}</span>
+                            </div>
+                          )}
+                          {/* Post URLs */}
+                          {t.post_urls && t.post_urls.length > 0 && (
+                            <div className="flex flex-col gap-0.5">
+                              {t.post_urls.map((url, ui) => (
+                                <a key={ui} href={url} target="_blank" rel="noopener noreferrer"
+                                  className="flex items-center gap-1 text-[10px] text-cyan-500/70 hover:text-cyan-400 transition-colors truncate max-w-full">
+                                  <ExternalLink size={9} className="flex-shrink-0" />
+                                  <span className="truncate">{url}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          {t.error_message && <p className="text-[10px] text-red-400 mt-1">{t.error_message}</p>}
+                        </div>
+                        <button
+                          onClick={() => setOpenLogsFor(openLogsFor === t.id ? null : t.id)}
+                          className="flex items-center gap-1 text-[9px] text-[#4b6080] hover:text-cyan-400 flex-shrink-0 transition-colors mt-0.5"
+                        >
+                          <ScrollText size={11} />
+                          Логи
+                          {openLogsFor === t.id ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                        </button>
+                      </div>
+                      {openLogsFor === t.id && (
+                        <div className="px-5 pb-3">
+                          <TaskLogsPanel taskId={t.id} onClose={() => setOpenLogsFor(null)} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
-        </>
-      ))}
-    </>
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -687,7 +885,7 @@ export default function Admin() {
                       </td>
                     </tr>
                     {expandedUser === u.id && (
-                      <UserTasksPanel userId={u.id} />
+                      <UserDetailPanel userId={u.id} onClose={() => setExpandedUser(null)} />
                     )}
                   </Fragment>
                 ))}
